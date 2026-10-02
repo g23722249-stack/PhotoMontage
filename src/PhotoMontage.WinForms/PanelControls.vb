@@ -186,14 +186,21 @@ Friend Module AquaTheme
 End Module
 
 ''' <summary>
-''' 編輯器所有按鈕共用的類別（目前為 Aqua.FlashButton）。按鈕之後重新設計時，只需修改這裡的基底類別。
+''' 編輯器所有按鈕共用的類別（目前為 Aqua.ThinButton：單張圖片、三段拉伸，狀態由程式自動算出）。
+''' 按鈕之後重新設計時，只需修改這裡的基底類別與預設大小。
 ''' </summary>
 Friend Class PillButton
-    Inherits Aqua.FlashButton
+    Inherits Aqua.ThinButton
+
+    ''' <summary>統一的按鈕高度（ThinButton 預設 36，配合現有版面改為 28）。</summary>
+    Public Const DefaultHeight As Integer = 28
+
+    Public Sub New()
+        Size = New Size(90, DefaultHeight)
+    End Sub
 
     ''' <summary>
-    ''' 把按鈕包在上下留白的容器中再停駐（Dock）。FlashButton 的高度固定為圖的原始高度，直接停駐時
-    ''' 會與 DPI 縮放後分配的高度不一致而互相重疊；包在容器中，容器隨 DPI 縮放、按鈕在內維持原高，就不會重疊。
+    ''' 把按鈕包在上下留白的容器中再停駐（Dock），連續停駐的按鈕之間才有固定間距，不會黏在一起。
     ''' </summary>
     Public Shared Function Docked(button As PillButton, dock As DockStyle, Optional spacing As Integer = 3) As System.Windows.Forms.Panel
         Dim host As New System.Windows.Forms.Panel() With {
