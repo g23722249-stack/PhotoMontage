@@ -200,7 +200,7 @@ Friend Class PillButton
             .Dock = dock,
             .Height = button.Height + spacing * 2,
             .Padding = New Padding(0, spacing, 0, spacing),
-            .BackColor = Color.Transparent}
+            .BackColor = System.Drawing.Color.Transparent}
         button.Dock = DockStyle.Fill
         host.Controls.Add(button)
         Return host
