@@ -80,7 +80,7 @@ Friend Class ExportDialog
         _path = New Aqua.TextBox() With {.Dock = DockStyle.Fill}
         _browse = New PillButton() With {.Text = "瀏覽…", .Width = 70, .Dock = DockStyle.Right}
         AddHandler _browse.Click, AddressOf OnBrowse
-        Dim pathRow As New System.Windows.Forms.Panel() With {.Dock = DockStyle.Fill, .Height = PillButton.DefaultHeight, .BackColor = Color.Transparent}
+        Dim pathRow As New System.Windows.Forms.Panel() With {.Dock = DockStyle.Fill, .Height = _browse.Height, .BackColor = Color.Transparent}
         pathRow.Controls.Add(_path)
         pathRow.Controls.Add(New System.Windows.Forms.Panel() With {.Dock = DockStyle.Right, .Width = 6, .BackColor = Color.Transparent})
         pathRow.Controls.Add(_browse)

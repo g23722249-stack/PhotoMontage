@@ -89,7 +89,7 @@ Public Class MontageEditorControl
 
         _progressBar = New Aqua.ProgressBar() With {.Dock = DockStyle.Top}
         _progressLabel = New Label() With {.Dock = DockStyle.Fill, .TextAlign = ContentAlignment.MiddleLeft}
-        Dim cancel As New PillButton() With {.Text = "取消", .Width = 60, .Height = 24}
+        Dim cancel As New PillButton() With {.Text = "取消", .Width = 60}
         AddHandler cancel.Click, Sub(s, e) CancelImport()
         Dim progressRow As New Panel() With {.Dock = DockStyle.Fill}
         progressRow.Controls.Add(_progressLabel)
