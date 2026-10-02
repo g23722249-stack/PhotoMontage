@@ -24,7 +24,8 @@ Friend Class ColorButton
         Controls.Add(_button)
         Controls.Add(gap)
         Controls.Add(_swatch)
-        Height = _button.Height
+        ' 不可用 _button.Height：按鈕停駐為 Fill，加入後已被撐成 UserControl 預設的 150 高
+        Height = PillButton.DefaultHeight
         UpdateSwatch()
     End Sub
 
@@ -214,7 +215,7 @@ Friend Class PillButton
     Public Shared Function Docked(button As PillButton, dock As DockStyle, Optional spacing As Integer = 3) As System.Windows.Forms.Panel
         Dim host As New System.Windows.Forms.Panel() With {
             .Dock = dock,
-            .Height = button.Height + spacing * 2,
+            .Height = PillButton.DefaultHeight + spacing * 2,
             .Padding = New Padding(0, spacing, 0, spacing),
             .BackColor = System.Drawing.Color.Transparent}
         button.Dock = DockStyle.Fill
