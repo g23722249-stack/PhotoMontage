@@ -1,6 +1,6 @@
 # 蒙太奇相片功能規劃
 
-> 狀態：v3 · 2026-10-02（M0 已完成）
+> 狀態：v4 · 2026-10-02（M0、M1 已完成）
 > 已確認：**桌面程式**、可單獨執行、也能掛進 `iPhoto.Net.vbproj`；不需帳號/雲端；MVP 含文字圖層；不做影片輸出。
 
 ## 1. 功能定義
@@ -19,7 +19,8 @@
 ```
 PhotoMontage.sln
 ├─ src/
-│  ├─ PhotoMontage.Core        (VB.NET 類別庫)  資料模型、版型、排版、馬賽克演算法、渲染、匯出
+│  ├─ PhotoMontage.Core        (VB.NET 類別庫)  資料模型、版型、排版、匯入流程、快取、馬賽克演算法、渲染、匯出
+│  ├─ PhotoMontage.Imaging     (VB.NET 類別庫)  WIC 解碼器（UseWPF），實作 Core 的 IImageCodec
 │  ├─ PhotoMontage.WinForms    (VB.NET 類別庫)  MontageEditorControl (UserControl)、MontageEditorForm、對外 API
 │  └─ PhotoMontage.App         (VB.NET WinExe)  獨立執行的殼：Sub Main → 開啟 MontageEditorForm
 └─ tests/
@@ -179,7 +180,7 @@ End Class
 | 階段 | 內容 | 預估 |
 |------|------|------|
 | M0 ✅ | 方案骨架：Core / WinForms / App / Tests 四個專案、對外 API 雛形、內建版型與單元測試 | 0.5 週 |
-| M1 | 照片匯入、縮圖快取、EXIF 修正、對外 API 雛形（`MontageEditor.ShowDialog`） | 1 週 |
+| M1 ✅ | 照片匯入（WIC 縮小解碼）、縮圖快取、EXIF 轉正、縮圖清單（多選/拖曳排序/排序/移除） | 1 週 |
 | M2 | 拼貼：版型系統、渲染器、拖曳換位、格內取景 | 2 週 |
 | M3 | 樣式、**文字圖層**、復原重做 | 1.5 週 |
 | M4 | 匯出、**掛進 iPhoto.Net 實測** → **MVP** | 1 週 |
@@ -191,6 +192,23 @@ End Class
 - **渲染測試**：固定輸入 → 比對輸出像素差異（容許少量誤差）。
 - **整合測試**：建一個最小 WinForms 宿主，以 API 開啟編輯器並匯出，模擬 iPhoto.Net 的用法。
 - **效能基準**：500 張素材 × 100×100 格馬賽克的算圖時間與記憶體峰值。
+
+## 8.5 M1 匯入設計（已實作）
+
+流程：`Prepare`（展開資料夾、正規化路徑、去重複、副檔名與數量上限；不讀檔）→ 先顯示佔位格 →
+`ProcessAsync`（背景平行：讀檔即關檔 → 檔頭判斷格式 → 讀資訊 → 超過 2 億像素拒絕 → 縮小解碼到 512px → EXIF 轉正 → 平均色 → 快取）。
+
+- **解碼：WIC**（`PhotoMontage.Imaging.WicImageCodec`）。JPEG 解碼時直接縮小，4800 萬像素照片產生縮圖約 1 MB 記憶體；安裝 HEIF 延伸模組後可讀 HEIC。Core 只依賴 `IImageCodec`，單元測試以假解碼器替換。
+- **同時解碼數量**：x86 為 2、64 位元為 4（不超過 CPU 核心數）。
+- **快取**：記憶體 LRU 200 MB ＋ 磁碟 `%LOCALAPPDATA%\PhotoMontage\cache`（鍵 = 路徑＋大小＋修改時間的 SHA-256；照片修改後自動重做；損壞的快取檔自動刪除；啟動時背景整理到 500 MB 以內）。快取命中時完全不讀原圖。
+- **不鎖檔**：`FileShare.ReadWrite Or Delete` 讀完立即關閉。
+- **失敗分類**：找不到、沒有權限、被占用、格式不支援、損壞、缺 HEIF 解碼器、解析度過高、超過數量上限。單張失敗不中斷，清單上標紅、滑鼠停留顯示原因，下方統一顯示「N 張無法匯入」。失敗的照片重新加入時會取代舊項目。
+- **取消**：已完成的保留，未處理的移除。
+- **數量上限**：拼貼 100 張、馬賽克 2000 張（含既有照片）。
+- **縮圖清單**：只繪製可見項目；Ctrl/Shift 多選、Ctrl+A、Delete 移除、拖曳調整順序、右鍵選單（移除、依匯入順序／檔名（自然排序）／拍攝時間排列）、拖放檔案或資料夾。
+- **對外 API**：`MontageEditorControl.AddPhotos(paths)`（立即返回）、`CancelImport()`、`IsImporting`。`ShowDialog` 在視窗 `Shown` 之後才開始匯入。
+
+已知限制：解碼時忽略色彩描述檔（避免損壞的 ICC 造成失敗），Display P3 照片縮圖顏色會略淡；匯出（M4）時再處理色彩管理。
 
 ## 9. 已確認的宿主資訊（iPhoto.Net）
 - SDK 樣式 vbproj，`net8.0-windows`，WinForms，`PlatformTarget=x86`（Jet 4.0），`Option Strict Off`，自訂 `Sub Main`。

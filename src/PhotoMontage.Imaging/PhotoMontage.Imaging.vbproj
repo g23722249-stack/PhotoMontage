@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 以 WIC（WPF 的 BitmapDecoder）實作 IImageCodec：解碼時縮小、讀 EXIF、支援 HEIC。
+       獨立成專案，讓 Core 與其單元測試不依賴 WPF。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>PhotoMontage.Imaging</RootNamespace>
+    <AssemblyName>PhotoMontage.Imaging</AssemblyName>
+    <MyType>Empty</MyType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PhotoMontage.Core\PhotoMontage.Core.vbproj" />
+  </ItemGroup>
+
+</Project>
