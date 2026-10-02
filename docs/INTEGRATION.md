@@ -25,6 +25,8 @@ C:\專案\
 
 ## 2. 加入方案與參考
 
+PhotoMontage 的介面使用與 iPhoto 相同的 **Aqua.Net**（`C:\專案\RunTime\Aqua.Net\Aqua.Net.vbproj`），兩者參考的是同一個專案，iPhoto.Net 的方案裡已經有它，不需要重複加入。
+
 1. 在 Visual Studio 開啟 iPhoto.Net 的 `.sln`。
 2. 方案總管 → 在方案上按右鍵 → **加入 → 現有專案**，依序加入：
    - `C:\專案\PhotoMontage\src\PhotoMontage.Core\PhotoMontage.Core.vbproj`
@@ -63,7 +65,8 @@ Private Sub mnuMontage_Click(sender As Object, e As EventArgs) Handles mnuMontag
         .InitialPhotos = photos,
         .DefaultExportFolder = CurrentAlbumFolder,   ' 匯出對話框預設的資料夾
         .CloseAfterExport = True,                    ' 匯出後自動關閉並回傳結果
-        .ShowExportCompletedMessage = False          ' 由 iPhoto 自己處理後續
+        .ShowExportCompletedMessage = False,         ' 由 iPhoto 自己處理後續
+        .AquaColor = Aqua.ColorConstants.Blue        ' 與 iPhoto 使用的 Aqua 主題色一致
     })
 
     If result.Success Then
@@ -98,6 +101,8 @@ editor.AddPhotos(GetSelectedPhotoPaths())   ' 立即返回，背景讀取
 - `PhotoMontage.Imaging.dll`
 - `PhotoMontage.WinForms.dll`
 - `System.Drawing.Common.dll`（若 iPhoto 已參考其他版本，NuGet 會自動取較新的版本）
+
+`Aqua.Net.dll` 與 LibVLC 本來就隨 iPhoto 發行，不需額外處理。
 
 與 `iPhoto.exe` 一起發行即可。縮圖快取放在 `%LOCALAPPDATA%\PhotoMontage\cache`，可隨時刪除。
 

@@ -7,25 +7,25 @@ Imports PhotoMontage.Core
 Friend Class TextPanel
     Inherits StackPanel
 
-    Private Shared ReadOnly AlignmentNames As String() = {"靠左", "置中", "靠右"}
 
     Private _layer As TextLayer
     Private _updating As Boolean
 
-    Private ReadOnly _hint As Label
+    Private ReadOnly _hint As System.Windows.Forms.Label
     Private ReadOnly _editors As New List(Of Control)
-    Private ReadOnly _text As TextBox
+    Private ReadOnly _text As Aqua.TextBox
+    ''' <summary>字型清單保留標準下拉選單：Aqua 下拉選單無法捲動，放不下數百種字型。</summary>
     Private ReadOnly _font As ComboBox
     Private ReadOnly _size As LabeledSlider
     Private ReadOnly _color As ColorButton
-    Private ReadOnly _bold As CheckBox
-    Private ReadOnly _italic As CheckBox
-    Private ReadOnly _alignment As ComboBox
+    Private ReadOnly _bold As Aqua.CheckBox
+    Private ReadOnly _italic As Aqua.CheckBox
+    Private ReadOnly _alignment As SegmentedChoice
     Private ReadOnly _outline As LabeledSlider
     Private ReadOnly _outlineColor As ColorButton
-    Private ReadOnly _shadow As CheckBox
+    Private ReadOnly _shadow As Aqua.CheckBox
     Private ReadOnly _shadowColor As ColorButton
-    Private ReadOnly _rotation As NumericUpDown
+    Private ReadOnly _rotation As LabeledSlider
 
     Public Event ChangeStarting As EventHandler(Of ChangeStartingEventArgs)
     Public Event TextChangedByUser As EventHandler
@@ -33,7 +33,7 @@ Friend Class TextPanel
     Public Event DeleteRequested As EventHandler
 
     Public Sub New()
-        Dim addButton = Add(New Button() With {.Text = "新增文字", .Height = 32})
+        Dim addButton = Add(New Aqua.FlashButton() With {.Text = "新增文字"})
         AddHandler addButton.Click, Sub(s, e) RaiseEvent AddRequested(Me, EventArgs.Empty)
 
         _hint = AddLabel("在畫布上點選文字即可編輯。" & vbLf & "拖曳移動、拖曳上方圓點旋轉（按住 Shift 每 15°）、Ctrl+滾輪調整大小、雙擊編輯內容。")
@@ -41,7 +41,7 @@ Friend Class TextPanel
         _hint.MaximumSize = New Size(210, 0)
 
         Editor(AddLabel("內容"))
-        _text = Editor(Add(New TextBox() With {.Multiline = True, .Height = 60, .AcceptsReturn = True, .ScrollBars = ScrollBars.Vertical}))
+        _text = Editor(Add(New Aqua.TextBox() With {.Multiline = True, .ScrollBars = ScrollBars.Vertical, .Height = 64}))
         AddHandler _text.TextChanged, Sub(s, e) Apply("text:content", Sub(t) t.Text = _text.Text)
 
         Editor(AddLabel("字型"))
@@ -58,34 +58,37 @@ Friend Class TextPanel
         AddHandler _size.ValueChanged, Sub(s, e) Apply("text:size", Sub(t) t.FontSize = _size.Value * 0.005F)
 
         Editor(AddLabel("顏色"))
-        _color = Editor(Add(New ColorButton() With {.Text = "選擇…"}))
+        _color = Editor(Add(New ColorButton()))
         AddHandler _color.ColorPicked, Sub(s, e) Apply(Nothing, Sub(t) t.Color = _color.SelectedColor)
 
-        _bold = New CheckBox() With {.Text = "粗體", .AutoSize = True}
-        _italic = New CheckBox() With {.Text = "斜體", .AutoSize = True}
-        _alignment = New ComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList, .Width = 70}
-        _alignment.Items.AddRange(AlignmentNames)
-        Editor(AddRow(_bold, _italic, _alignment))
+        _bold = New Aqua.CheckBox() With {.Text = "粗體"}
+        _italic = New Aqua.CheckBox() With {.Text = "斜體"}
+        Editor(AddRow(_bold, _italic))
         AddHandler _bold.CheckedChanged, Sub(s, e) Apply(Nothing, Sub(t) t.Bold = _bold.Checked)
         AddHandler _italic.CheckedChanged, Sub(s, e) Apply(Nothing, Sub(t) t.Italic = _italic.Checked)
-        AddHandler _alignment.SelectedIndexChanged, Sub(s, e) Apply(Nothing, Sub(t) t.Alignment = CType(_alignment.SelectedIndex, StringAlignment))
+
+        Editor(AddLabel("對齊"))
+        _alignment = Editor(Add(New SegmentedChoice("靠左", "置中", "靠右")))
+        AddHandler _alignment.SelectedChanged, Sub(s, e) Apply(Nothing, Sub(t) t.Alignment = CType(Math.Max(0, _alignment.SelectedIndex), StringAlignment))
 
         Editor(AddLabel("外框"))
         _outline = Editor(Add(New LabeledSlider(0, 20, Function(v) If(v = 0, "無", $"{v}%"))))
         AddHandler _outline.ValueChanged, Sub(s, e) Apply("text:outline", Sub(t) t.OutlineWidth = _outline.Value / 100.0F)
-        _outlineColor = Editor(Add(New ColorButton() With {.Text = "外框色…"}))
+        _outlineColor = Editor(Add(New ColorButton() With {.ButtonText = "外框色…"}))
         AddHandler _outlineColor.ColorPicked, Sub(s, e) Apply(Nothing, Sub(t) t.OutlineColor = _outlineColor.SelectedColor)
 
-        _shadow = Editor(Add(New CheckBox() With {.Text = "陰影", .Margin = New Padding(0, 8, 0, 2)}))
+        _shadow = Editor(Add(New Aqua.CheckBox() With {.Text = "陰影"}))
+        _shadow.Margin = New Padding(0, 8, 0, 2)
         AddHandler _shadow.CheckedChanged, Sub(s, e) Apply(Nothing, Sub(t) t.ShadowEnabled = _shadow.Checked)
-        _shadowColor = Editor(Add(New ColorButton() With {.Text = "陰影色…", .PreserveAlpha = True}))
+        _shadowColor = Editor(Add(New ColorButton() With {.ButtonText = "陰影色…", .PreserveAlpha = True}))
         AddHandler _shadowColor.ColorPicked, Sub(s, e) Apply(Nothing, Sub(t) t.ShadowColor = _shadowColor.SelectedColor)
 
         Editor(AddLabel("旋轉（度）"))
-        _rotation = Editor(Add(New NumericUpDown() With {.Minimum = -180, .Maximum = 180, .DecimalPlaces = 0}))
-        AddHandler _rotation.ValueChanged, Sub(s, e) Apply("text:rotation", Sub(t) t.Rotation = CSng(_rotation.Value))
+        _rotation = Editor(Add(New LabeledSlider(-180, 180, Function(v) $"{v}°")))
+        AddHandler _rotation.ValueChanged, Sub(s, e) Apply("text:rotation", Sub(t) t.Rotation = _rotation.Value)
 
-        Dim delete = Editor(Add(New Button() With {.Text = "刪除這段文字", .Height = 28, .Margin = New Padding(0, 12, 0, 2)}))
+        Dim delete = Editor(Add(New Aqua.FlashButton() With {.Text = "刪除這段文字"}))
+        delete.Margin = New Padding(0, 12, 0, 2)
         AddHandler delete.Click, Sub(s, e) RaiseEvent DeleteRequested(Me, EventArgs.Empty)
 
         Bind(Nothing)
@@ -122,7 +125,7 @@ Friend Class TextPanel
             _outlineColor.SelectedColor = _layer.OutlineColor
             _shadow.Checked = _layer.ShadowEnabled
             _shadowColor.SelectedColor = _layer.ShadowColor
-            _rotation.Value = CDec(Math.Max(-180, Math.Min(180, Math.Round(_layer.Rotation))))
+            _rotation.Value = CInt(Math.Max(-180, Math.Min(180, Math.Round(_layer.Rotation))))
         End If
         _updating = False
     End Sub
@@ -131,7 +134,8 @@ Friend Class TextPanel
     Public Sub FocusText()
         If _layer Is Nothing Then Return
         _text.Focus()
-        _text.SelectAll()
+        _text.SelStart = 0
+        _text.SelLength = If(_text.Text, "").Length
     End Sub
 
     Private Sub Apply(key As String, change As Action(Of TextLayer))

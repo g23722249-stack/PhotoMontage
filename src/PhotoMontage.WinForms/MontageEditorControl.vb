@@ -45,23 +45,27 @@ Public Class MontageEditorControl
     Private Const BackgroundPreviewEdge As Integer = 1600
 
     Private ReadOnly _strip As PhotoStrip
-    Private ReadOnly _templateList As ListBox
-    Private ReadOnly _ratioCombo As ComboBox
+    ''' <summary>版型清單；第 0 項為「自動排版」，其後為內建版型（與 <see cref="_templates"/> 對應）。</summary>
+    Private ReadOnly _templateList As Aqua.ItemListBox
+    Private ReadOnly _templates As New List(Of CollageTemplate)
+    ''' <summary>畫布比例，順序與 <see cref="CanvasPresets.All"/> 相同。</summary>
+    Private ReadOnly _ratioCombo As Aqua.DropDownList
     Private ReadOnly _canvas As CollageCanvas
-    Private ReadOnly _exportButton As Button
+    Private ReadOnly _exportButton As Aqua.FlashButton
     Private ReadOnly _stylePanel As StylePanel
     Private ReadOnly _textPanel As TextPanel
-    Private ReadOnly _tabs As TabControl
-    Private ReadOnly _textTab As TabPage
-    Private ReadOnly _layoutTab As TabPage
-    Private ReadOnly _styleTab As TabPage
-    Private ReadOnly _mosaicTab As TabPage
+    Private ReadOnly _tabs As Aqua.TabControl
+    Private ReadOnly _textTab As Aqua.TabPage
+    Private ReadOnly _layoutTab As Aqua.TabPage
+    Private ReadOnly _styleTab As Aqua.TabPage
+    Private ReadOnly _mosaicTab As Aqua.TabPage
     Private ReadOnly _mosaicPanel As MosaicPanel
-    Private ReadOnly _modeCombo As ToolStripComboBox
-    Private ReadOnly _undoButton As ToolStripButton
-    Private ReadOnly _redoButton As ToolStripButton
+    Private ReadOnly _modeButtons As SegmentedChoice
+    Private ReadOnly _undoButton As Aqua.FlashButton
+    Private ReadOnly _redoButton As Aqua.FlashButton
+    Private ReadOnly _toolTip As New ToolTip()
     Private ReadOnly _progressPanel As Panel
-    Private ReadOnly _progressBar As ProgressBar
+    Private ReadOnly _progressBar As Aqua.ProgressBar
     Private ReadOnly _progressLabel As Label
     Private ReadOnly _failureLink As LinkLabel
 
@@ -78,19 +82,19 @@ Public Class MontageEditorControl
         AddHandler _strip.ItemActivated, AddressOf OnStripItemActivated
         AddHandler _layoutTimer.Tick, AddressOf OnLayoutTimerTick
 
-        Dim addPhotosButton As New Button() With {.Text = "加入照片…", .Dock = DockStyle.Top, .Height = 32}
+        Dim addPhotosButton As New Aqua.FlashButton() With {.Text = "加入照片…", .Dock = DockStyle.Top}
         AddHandler addPhotosButton.Click, AddressOf OnAddPhotosClick
-        Dim addFolderButton As New Button() With {.Text = "加入資料夾…", .Dock = DockStyle.Top, .Height = 32}
+        Dim addFolderButton As New Aqua.FlashButton() With {.Text = "加入資料夾…", .Dock = DockStyle.Top}
         AddHandler addFolderButton.Click, AddressOf OnAddFolderClick
 
-        _progressBar = New ProgressBar() With {.Dock = DockStyle.Top, .Height = 16}
+        _progressBar = New Aqua.ProgressBar() With {.Dock = DockStyle.Top}
         _progressLabel = New Label() With {.Dock = DockStyle.Fill, .TextAlign = ContentAlignment.MiddleLeft}
-        Dim cancel As New LinkLabel() With {.Text = "取消", .Dock = DockStyle.Right, .AutoSize = True, .TextAlign = ContentAlignment.MiddleRight}
-        AddHandler cancel.LinkClicked, Sub(s, e) CancelImport()
+        Dim cancel As New Aqua.FlashButton() With {.Text = "取消", .Dock = DockStyle.Right, .Width = 60}
+        AddHandler cancel.Click, Sub(s, e) CancelImport()
         Dim progressRow As New Panel() With {.Dock = DockStyle.Fill}
         progressRow.Controls.Add(_progressLabel)
         progressRow.Controls.Add(cancel)
-        _progressPanel = New Panel() With {.Dock = DockStyle.Bottom, .Height = 40, .Visible = False}
+        _progressPanel = New Panel() With {.Dock = DockStyle.Bottom, .Height = 48, .Visible = False}
         _progressPanel.Controls.Add(progressRow)
         _progressPanel.Controls.Add(_progressBar)
 
@@ -104,20 +108,21 @@ Public Class MontageEditorControl
         left.Controls.Add(_failureLink)
         left.Controls.Add(_progressPanel)
 
-        _ratioCombo = New ComboBox() With {.Dock = DockStyle.Top, .DropDownStyle = ComboBoxStyle.DropDownList}
+        _ratioCombo = New Aqua.DropDownList() With {.Dock = DockStyle.Top}
         For Each preset In CanvasPresets.All
-            _ratioCombo.Items.Add(preset)
+            _ratioCombo.AddItem(preset.Name, preset.Name)
         Next
-        AddHandler _ratioCombo.SelectedIndexChanged, AddressOf OnRatioChanged
+        AddHandler _ratioCombo.SelectedChanged, AddressOf OnRatioChanged
 
-        _templateList = New ListBox() With {.Dock = DockStyle.Fill, .IntegralHeight = False, .DisplayMember = NameOf(CollageTemplate.Name)}
-        _templateList.Items.Add(New CollageTemplate(CollageTemplates.AutoId, "自動排版（依照片）", Array.Empty(Of RectangleF)()))
-        For Each t In CollageTemplates.BuiltIn
-            _templateList.Items.Add(t)
+        _templates.Add(New CollageTemplate(CollageTemplates.AutoId, "自動排版（依照片）", Array.Empty(Of RectangleF)()))
+        _templates.AddRange(CollageTemplates.BuiltIn)
+        _templateList = New Aqua.ItemListBox() With {.Dock = DockStyle.Fill}
+        For Each t In _templates
+            _templateList.AddItem(t.Id, t.Name)
         Next
-        AddHandler _templateList.SelectedIndexChanged, AddressOf OnTemplateChanged
+        AddHandler _templateList.SelectedChanged, AddressOf OnTemplateChanged
 
-        Dim autoAssign As New Button() With {.Text = "重新自動分配", .Dock = DockStyle.Bottom, .Height = 32}
+        Dim autoAssign As New Aqua.FlashButton() With {.Text = "重新自動分配", .Dock = DockStyle.Bottom}
         AddHandler autoAssign.Click, Sub(s, e)
                                          RecordUndo()
                                          ApplyLayout(reassign:=True)
@@ -136,14 +141,14 @@ Public Class MontageEditorControl
                                               End Sub
         AddHandler _canvas.FilesDropped, Sub(s, e) AddPhotos(e.Paths)
 
-        _exportButton = New Button() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Height = 36, .Enabled = False}
+        _exportButton = New Aqua.FlashButton() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Enabled = False}
         AddHandler _exportButton.Click, Sub(s, e) ShowExportDialog()
 
         ' 「版面」頁
-        Dim ratioLabel As New Label() With {.Text = "畫布比例", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 0, 0, 2)}
-        Dim templateLabel As New Label() With {.Text = "版型", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 8, 0, 2)}
+        Dim ratioLabel As New Label() With {.Text = "畫布比例", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 0, 0, 2), .BackColor = Color.Transparent}
+        Dim templateLabel As New Label() With {.Text = "版型", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 8, 0, 2), .BackColor = Color.Transparent}
         _mosaicGenerator = New MosaicGenerator(_importer)
-        Dim layoutTab As New TabPage("版面") With {.Padding = New Padding(6)}
+        Dim layoutTab As New Aqua.TabPage("版面") With {.Padding = New Padding(6)}
         _layoutTab = layoutTab
         layoutTab.Controls.Add(_templateList)
         layoutTab.Controls.Add(templateLabel)
@@ -156,7 +161,7 @@ Public Class MontageEditorControl
         AddHandler _stylePanel.ChangeStarting, Sub(s, e) RecordUndo(e.Key)
         AddHandler _stylePanel.DesignChanged, Sub(s, e) _canvas.Invalidate()
         AddHandler _stylePanel.BackgroundImageRequested, Sub(s, e) SetBackgroundImage(e.Paths(0))
-        Dim styleTab As New TabPage("樣式")
+        Dim styleTab As New Aqua.TabPage("樣式")
         _styleTab = styleTab
         styleTab.Controls.Add(_stylePanel)
 
@@ -166,11 +171,13 @@ Public Class MontageEditorControl
         AddHandler _textPanel.TextChangedByUser, Sub(s, e) _canvas.Invalidate()
         AddHandler _textPanel.AddRequested, Sub(s, e) AddText()
         AddHandler _textPanel.DeleteRequested, Sub(s, e) DeleteSelectedText()
-        _textTab = New TabPage("文字")
+        _textTab = New Aqua.TabPage("文字")
         _textTab.Controls.Add(_textPanel)
 
-        _tabs = New TabControl() With {.Dock = DockStyle.Fill}
-        _tabs.TabPages.AddRange({layoutTab, styleTab, _textTab})
+        _tabs = New Aqua.TabControl() With {.Dock = DockStyle.Fill}
+        For Each page In {layoutTab, styleTab, _textTab}
+            _tabs.TabPages.Add(page)
+        Next
 
         ' 「馬賽克」頁（馬賽克模式時取代「版面」與「樣式」）
         _mosaicPanel = New MosaicPanel() With {.Dock = DockStyle.Fill}
@@ -182,7 +189,7 @@ Public Class MontageEditorControl
         AddHandler _mosaicPanel.TargetFileRequested, Sub(s, e) SetMosaicTarget(e.Paths(0))
         AddHandler _mosaicPanel.RatioRequested, Sub(s, e) ApplyMosaicRatio(recordUndo:=True)
         AddHandler _canvas.MosaicCellCommand, AddressOf OnMosaicCellCommand
-        _mosaicTab = New TabPage("馬賽克")
+        _mosaicTab = New Aqua.TabPage("馬賽克")
         _mosaicTab.Controls.Add(_mosaicPanel)
 
         Dim right As New Panel() With {.Dock = DockStyle.Right, .Width = 250, .Padding = New Padding(4)}
@@ -190,18 +197,25 @@ Public Class MontageEditorControl
         right.Controls.Add(_exportButton)
 
         ' 工具列
-        _undoButton = New ToolStripButton("復原") With {.Enabled = False, .ToolTipText = "復原（Ctrl+Z）"}
+        _undoButton = New Aqua.FlashButton() With {.Text = "復原", .Width = 70, .Enabled = False}
+        _toolTip.SetToolTip(_undoButton, "復原（Ctrl+Z）")
         AddHandler _undoButton.Click, Sub(s, e) Undo()
-        _redoButton = New ToolStripButton("重做") With {.Enabled = False, .ToolTipText = "重做（Ctrl+Y）"}
+        _redoButton = New Aqua.FlashButton() With {.Text = "重做", .Width = 70, .Enabled = False}
+        _toolTip.SetToolTip(_redoButton, "重做（Ctrl+Y）")
         AddHandler _redoButton.Click, Sub(s, e) Redo()
-        Dim addTextButton As New ToolStripButton("新增文字")
+        Dim addTextButton As New Aqua.FlashButton() With {.Text = "新增文字", .Width = 84}
         AddHandler addTextButton.Click, Sub(s, e) AddText()
-        Dim toolbar As New ToolStrip() With {.GripStyle = ToolStripGripStyle.Hidden, .Dock = DockStyle.Top}
-        _modeCombo = New ToolStripComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList, .AutoSize = False, .Width = 90}
-        _modeCombo.Items.AddRange({"拼貼", "馬賽克"})
-        AddHandler _modeCombo.SelectedIndexChanged, Sub(s, e) OnModeChanged()
-        toolbar.Items.AddRange({New ToolStripLabel("模式："), _modeCombo, New ToolStripSeparator(),
-                                _undoButton, _redoButton, New ToolStripSeparator(), addTextButton})
+        _modeButtons = New SegmentedChoice("拼貼", "馬賽克") With {.Width = 160}
+        AddHandler _modeButtons.SelectedChanged, Sub(s, e) OnModeChanged()
+        Dim toolbar As New FlowLayoutPanel() With {.Dock = DockStyle.Top, .AutoSize = True, .WrapContents = False, .Padding = New Padding(6, 4, 6, 4)}
+        Dim modeLabel As New Label() With {.Text = "模式", .AutoSize = True, .Margin = New Padding(0, 7, 6, 0)}
+        toolbar.Controls.Add(modeLabel)
+        toolbar.Controls.Add(_modeButtons)
+        _modeButtons.Margin = New Padding(0, 0, 24, 0)
+        For Each b In {_undoButton, _redoButton, addTextButton}
+            b.Margin = New Padding(0, 0, 6, 0)
+            toolbar.Controls.Add(b)
+        Next
         AddHandler _history.Changed, Sub(s, e) UpdateUndoButtons()
 
         Controls.Add(_canvas)
@@ -228,16 +242,28 @@ Public Class MontageEditorControl
         _options = options
         _project.Mode = options.Mode
 
-        _suppressTemplateEvents = True
-        _ratioCombo.SelectedItem = If(CanvasPresets.Find(_project.CanvasSize), CanvasPresets.All(0))
-        _templateList.SelectedItem = _templateList.Items.Cast(Of CollageTemplate)().
-            FirstOrDefault(Function(t) t.Id = _project.Collage.TemplateId)
-        _suppressTemplateEvents = False
+        SyncLayoutPickers()
         _stylePanel.Bind(_project)
         _mosaicPanel.Bind(_project)
         ApplyModeUi()
         ApplyLayout(reassign:=True)
         _history.Clear()
+
+        ' 主題色：含目前沒有顯示的分頁
+        AquaTheme.Apply(Me, options.AquaColor)
+        For Each page In {_layoutTab, _styleTab, _mosaicTab, _textTab}
+            AquaTheme.Apply(page, options.AquaColor)
+        Next
+    End Sub
+
+    ''' <summary>依專案狀態設定「畫布比例」與「版型」的選取，不觸發變更事件。</summary>
+    Private Sub SyncLayoutPickers()
+        _suppressTemplateEvents = True
+        Dim preset = CanvasPresets.Find(_project.CanvasSize)
+        If preset IsNot Nothing Then _ratioCombo.SelectedIndex = CanvasPresets.All.ToList().IndexOf(preset)
+        Dim index = _templates.FindIndex(Function(t) t.Id = _project.Collage.TemplateId)
+        If index >= 0 Then _templateList.SelectedIndex = index
+        _suppressTemplateEvents = False
     End Sub
 
     ''' <summary>
@@ -438,8 +464,10 @@ Public Class MontageEditorControl
 
     Private Sub OnTemplateChanged(sender As Object, e As EventArgs)
         If _suppressTemplateEvents Then Return
-        Dim template = TryCast(_templateList.SelectedItem, CollageTemplate)
-        If template Is Nothing Then Return
+        Dim index = _templateList.SelectedIndex
+        If index < 0 OrElse index >= _templates.Count Then Return
+        Dim template = _templates(index)
+        If template.Id = _project.Collage.TemplateId Then Return
 
         RecordUndo()
         _project.Collage.TemplateId = template.Id
@@ -449,8 +477,10 @@ Public Class MontageEditorControl
 
     Private Sub OnRatioChanged(sender As Object, e As EventArgs)
         If _suppressTemplateEvents Then Return
-        Dim preset = TryCast(_ratioCombo.SelectedItem, CanvasPreset)
-        If preset Is Nothing Then Return
+        Dim index = _ratioCombo.SelectedIndex
+        If index < 0 OrElse index >= CanvasPresets.All.Count Then Return
+        Dim preset = CanvasPresets.All(index)
+        If preset.Matches(_project.CanvasSize) Then Return
 
         RecordUndo()
         _project.CanvasSize = preset.SizeFor(CanvasPresets.DefaultLongEdge)
@@ -584,7 +614,7 @@ Public Class MontageEditorControl
 
     Private Sub OnModeChanged()
         If _suppressModeEvents Then Return
-        Dim mode = If(_modeCombo.SelectedIndex = 1, MontageMode.Mosaic, MontageMode.Collage)
+        Dim mode = If(_modeButtons.SelectedIndex = 1, MontageMode.Mosaic, MontageMode.Collage)
         If mode = _project.Mode Then Return
         RecordUndo()
         _project.Mode = mode
@@ -599,15 +629,18 @@ Public Class MontageEditorControl
     ''' <summary>依模式切換右側分頁、畫布與狀態。</summary>
     Private Sub ApplyModeUi()
         _suppressModeEvents = True
-        _modeCombo.SelectedIndex = If(IsMosaicMode, 1, 0)
+        Dim modeIndex = If(IsMosaicMode, 1, 0)
+        If _modeButtons.SelectedIndex <> modeIndex Then _modeButtons.SelectedIndex = modeIndex
         _suppressModeEvents = False
 
         Dim pages = If(IsMosaicMode, {_mosaicTab, _textTab}, {_layoutTab, _styleTab, _textTab})
-        If Not _tabs.TabPages.Cast(Of TabPage)().SequenceEqual(pages) Then
+        If Not _tabs.TabPages.SequenceEqual(pages) Then
             Dim selected = _tabs.SelectedTab
             _tabs.TabPages.Clear()
-            _tabs.TabPages.AddRange(pages)
-            If pages.Contains(selected) Then _tabs.SelectedTab = selected
+            For Each page In pages
+                _tabs.TabPages.Add(page)
+            Next
+            _tabs.SelectedTab = If(pages.Contains(selected), selected, pages(0))
         End If
         _mosaicPanel.RefreshFromProject()
         _canvas.ResetInteraction()
@@ -867,7 +900,7 @@ Public Class MontageEditorControl
                                                MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Return Nothing
 
         Dim result As ExportResult
-        Using dlg As New ExportDialog(_project, New MontageExporter(_importer), _options.DefaultExportFolder)
+        Using dlg As New ExportDialog(_project, New MontageExporter(_importer), _options.DefaultExportFolder, _options.AquaColor)
             If dlg.ShowDialog(Me) <> DialogResult.OK OrElse dlg.Result Is Nothing Then Return Nothing
             result = dlg.Result
         End Using
@@ -915,11 +948,7 @@ Public Class MontageEditorControl
 
     ''' <summary>復原／重做套用快照後，把畫面同步回專案狀態。</summary>
     Private Sub AfterHistoryRestore()
-        _suppressTemplateEvents = True
-        _ratioCombo.SelectedItem = If(CanvasPresets.Find(_project.CanvasSize), _ratioCombo.SelectedItem)
-        _templateList.SelectedItem = _templateList.Items.Cast(Of CollageTemplate)().
-            FirstOrDefault(Function(t) t.Id = _project.Collage.TemplateId)
-        _suppressTemplateEvents = False
+        SyncLayoutPickers()
 
         If IsAutoLayout Then
             ' 先依快照中的格子順序調整照片順序，再依目前的照片重建格子（快照中的取景會被保留）
@@ -1051,6 +1080,7 @@ Public Class MontageEditorControl
             _importCts.Cancel()
             _importCts.Dispose()
             _layoutTimer.Dispose()
+            _toolTip.Dispose()
             For Each bmp In _previewImages.Values
                 bmp.Dispose()
             Next

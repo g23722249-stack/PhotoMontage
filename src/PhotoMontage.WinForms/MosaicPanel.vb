@@ -10,18 +10,19 @@ Friend Class MosaicPanel
     Private _updating As Boolean
     Private _tileCount As Integer
 
-    Private ReadOnly _targetLabel As Label
-    Private ReadOnly _useSelected As Button
-    Private ReadOnly _ratio As ComboBox
+    Private ReadOnly _targetLabel As System.Windows.Forms.Label
+    Private ReadOnly _useSelected As Aqua.FlashButton
+    ''' <summary>第 0 項為「依主圖比例」，其後依序為 <see cref="CanvasPresets.All"/>。</summary>
+    Private ReadOnly _ratio As Aqua.DropDownList
     Private ReadOnly _columns As LabeledSlider
-    Private ReadOnly _gridLabel As Label
-    Private ReadOnly _maxRepeat As NumericUpDown
-    Private ReadOnly _avoidAdjacent As CheckBox
+    Private ReadOnly _gridLabel As System.Windows.Forms.Label
+    Private ReadOnly _maxRepeat As LabeledSlider
+    Private ReadOnly _avoidAdjacent As Aqua.CheckBox
     Private ReadOnly _tint As LabeledSlider
-    Private ReadOnly _generate As Button
-    Private ReadOnly _progress As ProgressBar
-    Private ReadOnly _cancel As LinkLabel
-    Private ReadOnly _status As Label
+    Private ReadOnly _generate As Aqua.FlashButton
+    Private ReadOnly _progress As Aqua.ProgressBar
+    Private ReadOnly _cancel As Aqua.FlashButton
+    Private ReadOnly _status As System.Windows.Forms.Label
 
     ''' <summary>即將變更（供復原記錄）。</summary>
     Public Event ChangeStarting As EventHandler(Of ChangeStartingEventArgs)
@@ -39,21 +40,23 @@ Friend Class MosaicPanel
 
     Public Sub New()
         AddLabel("主圖")
-        _targetLabel = Add(New Label() With {.AutoEllipsis = True, .Height = 20})
-        _useSelected = New Button() With {.Text = "用左側選取的照片", .AutoSize = True}
+        _targetLabel = Add(New System.Windows.Forms.Label() With {.AutoEllipsis = True, .Height = 20, .BackColor = Color.Transparent})
+        _useSelected = New Aqua.FlashButton() With {.Text = "用左側選取的照片", .Width = 128}
         AddHandler _useSelected.Click, Sub(s, e) RaiseEvent UseSelectedAsTargetRequested(Me, EventArgs.Empty)
-        Dim pick As New Button() With {.Text = "選擇檔案…", .AutoSize = True}
+        Dim pick As New Aqua.FlashButton() With {.Text = "選擇檔案…", .Width = 84}
         AddHandler pick.Click, AddressOf OnPickTarget
         AddRow(_useSelected, pick)
 
         AddLabel("畫布比例")
-        _ratio = Add(New ComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList})
-        _ratio.Items.Add("依主圖比例")
+        _ratio = Add(New Aqua.DropDownList())
+        _ratio.AddItem("target", "依主圖比例")
         For Each p In CanvasPresets.All
-            _ratio.Items.Add(p)
+            _ratio.AddItem(p.Name, p.Name)
         Next
+        _updating = True
         _ratio.SelectedIndex = 0
-        AddHandler _ratio.SelectedIndexChanged, Sub(s, e) If Not _updating Then RaiseEvent RatioRequested(Me, EventArgs.Empty)
+        _updating = False
+        AddHandler _ratio.SelectedChanged, Sub(s, e) If Not _updating Then RaiseEvent RatioRequested(Me, EventArgs.Empty)
 
         AddLabel("每列格數")
         _columns = Add(New LabeledSlider(MosaicSettings.MinColumns, MosaicSettings.MaxColumns, Function(v) v.ToString()))
@@ -62,13 +65,14 @@ Friend Class MosaicPanel
                 m.Columns = _columns.Value
                 m.Rows = MosaicSettings.RowsFor(m.Columns, _project.CanvasAspect)
             End Sub)
-        _gridLabel = Add(New Label() With {.Height = 20, .ForeColor = SystemColors.GrayText})
+        _gridLabel = Add(New System.Windows.Forms.Label() With {.Height = 20, .ForeColor = SystemColors.GrayText, .BackColor = Color.Transparent})
 
         AddLabel("每張素材最多使用（0 = 不限）")
-        _maxRepeat = Add(New NumericUpDown() With {.Minimum = 0, .Maximum = 1000})
-        AddHandler _maxRepeat.ValueChanged, Sub(s, e) Apply("mosaic:repeat", True, Sub(m) m.MaxRepeat = CInt(_maxRepeat.Value))
+        _maxRepeat = Add(New LabeledSlider(0, 50, Function(v) If(v = 0, "不限", $"{v} 次")))
+        AddHandler _maxRepeat.ValueChanged, Sub(s, e) Apply("mosaic:repeat", True, Sub(m) m.MaxRepeat = _maxRepeat.Value)
 
-        _avoidAdjacent = Add(New CheckBox() With {.Text = "避免相鄰格子重複", .Margin = New Padding(0, 6, 0, 2)})
+        _avoidAdjacent = Add(New Aqua.CheckBox() With {.Text = "避免相鄰格子重複"})
+        _avoidAdjacent.Margin = New Padding(0, 6, 0, 2)
         AddHandler _avoidAdjacent.CheckedChanged, Sub(s, e) Apply(Nothing, True, Sub(m) m.AvoidAdjacentDuplicates = _avoidAdjacent.Checked)
 
         AddLabel("疊上主圖")
@@ -78,11 +82,12 @@ Friend Class MosaicPanel
         tintHint.ForeColor = SystemColors.GrayText
         tintHint.MaximumSize = New Size(210, 0)
 
-        _generate = Add(New Button() With {.Text = "產生馬賽克", .Height = 36, .Margin = New Padding(0, 14, 0, 4)})
+        _generate = Add(New Aqua.FlashButton() With {.Text = "產生馬賽克"})
+        _generate.Margin = New Padding(0, 14, 0, 4)
         AddHandler _generate.Click, Sub(s, e) RaiseEvent GenerateRequested(Me, EventArgs.Empty)
-        _progress = Add(New ProgressBar() With {.Height = 14, .Visible = False})
-        _cancel = New LinkLabel() With {.Text = "取消", .AutoSize = True, .Visible = False}
-        AddHandler _cancel.LinkClicked, Sub(s, e) RaiseEvent CancelRequested(Me, EventArgs.Empty)
+        _progress = Add(New Aqua.ProgressBar() With {.Visible = False})
+        _cancel = New Aqua.FlashButton() With {.Text = "取消", .Width = 70, .Visible = False}
+        AddHandler _cancel.Click, Sub(s, e) RaiseEvent CancelRequested(Me, EventArgs.Empty)
         AddRow(_cancel)
         _status = AddLabel("")
         _status.MaximumSize = New Size(210, 0)
@@ -102,7 +107,8 @@ Friend Class MosaicPanel
 
     Public ReadOnly Property SelectedPreset As CanvasPreset
         Get
-            Return TryCast(_ratio.SelectedItem, CanvasPreset)
+            Dim i = _ratio.SelectedIndex - 1
+            Return If(i >= 0 AndAlso i < CanvasPresets.All.Count, CanvasPresets.All(i), Nothing)
         End Get
     End Property
 
@@ -126,10 +132,10 @@ Friend Class MosaicPanel
         _targetLabel.ForeColor = If(path Is Nothing, SystemColors.GrayText, SystemColors.ControlText)
         If Not MatchTargetAspect Then
             Dim preset = CanvasPresets.Find(_project.CanvasSize)
-            If preset IsNot Nothing Then _ratio.SelectedItem = preset
+            If preset IsNot Nothing Then _ratio.SelectedIndex = CanvasPresets.All.ToList().IndexOf(preset) + 1
         End If
         _columns.Value = m.Columns
-        _maxRepeat.Value = Math.Min(_maxRepeat.Maximum, m.MaxRepeat)
+        _maxRepeat.Value = Math.Min(50, m.MaxRepeat)
         _avoidAdjacent.Checked = m.AvoidAdjacentDuplicates
         _tint.Value = CInt(Math.Round(m.Tint * 100))
         _gridLabel.Text = $"{m.Columns} × {m.Rows} = {m.CellCount:N0} 格"

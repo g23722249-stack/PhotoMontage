@@ -12,8 +12,8 @@ Friend Class StylePanel
     Private ReadOnly _gap As LabeledSlider
     Private ReadOnly _radius As LabeledSlider
     Private ReadOnly _background As ColorButton
-    Private ReadOnly _bgImageLabel As Label
-    Private ReadOnly _clearBgImage As Button
+    Private ReadOnly _bgImageLabel As System.Windows.Forms.Label
+    Private ReadOnly _clearBgImage As Aqua.FlashButton
 
     ''' <summary>即將變更（供復原記錄）。</summary>
     Public Event ChangeStarting As EventHandler(Of ChangeStartingEventArgs)
@@ -34,14 +34,14 @@ Friend Class StylePanel
         AddHandler _radius.ValueChanged, Sub(s, e) Apply("style:radius", Sub(p) p.Collage.CornerRadius = _radius.Value / 100.0F)
 
         AddLabel("背景色")
-        _background = Add(New ColorButton() With {.Text = "選擇…"})
+        _background = Add(New ColorButton())
         AddHandler _background.ColorPicked, Sub(s, e) Apply(Nothing, Sub(p) p.BackgroundColor = _background.SelectedColor)
 
         AddLabel("背景圖")
-        _bgImageLabel = Add(New Label() With {.AutoEllipsis = True, .Height = 20, .ForeColor = SystemColors.GrayText})
-        Dim pick As New Button() With {.Text = "選擇圖片…", .AutoSize = True}
+        _bgImageLabel = Add(New System.Windows.Forms.Label() With {.AutoEllipsis = True, .Height = 20, .ForeColor = SystemColors.GrayText, .BackColor = Color.Transparent})
+        Dim pick As New Aqua.FlashButton() With {.Text = "選擇圖片…", .Width = 100}
         AddHandler pick.Click, AddressOf OnPickBackgroundImage
-        _clearBgImage = New Button() With {.Text = "移除", .AutoSize = True}
+        _clearBgImage = New Aqua.FlashButton() With {.Text = "移除", .Width = 70}
         AddHandler _clearBgImage.Click, Sub(s, e) Apply(Nothing, Sub(p) p.BackgroundImagePath = Nothing)
         AddRow(pick, _clearBgImage)
 

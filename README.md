@@ -1,6 +1,6 @@
 # PhotoMontage
 
-蒙太奇相片編輯器，VB.NET + WinForms，`net8.0-windows`。
+蒙太奇相片編輯器，VB.NET + WinForms（Aqua 控制項，與 iPhoto 外觀一致），`net8.0-windows`。
 
 - **拼貼**：自動排版或固定版型、換位與取景、間距／圓角／背景、文字圖層、復原重做、高解析匯出。
 - **馬賽克**：用大量照片拼出一張主圖，CIELAB 配色、使用次數與相鄰重複控制、疊色、超大尺寸 PNG 匯出。
@@ -18,11 +18,27 @@
 
 ## 建置與測試
 
+介面使用 **Aqua.Net**（與 iPhoto.Net 共用），預設位置為 `C:\專案\RunTime\Aqua.Net`：
+
+```
+C:\專案\
+├─ PhotoMontage\
+└─ RunTime\Aqua.Net\Aqua.Net.vbproj
+```
+
+放在別處時，修改 `Directory.Build.props` 的 `AquaNetProject`，或建置時加上 `-p:AquaNetProject=完整路徑`。
+
+**Visual Studio**：開啟 `PhotoMontage.sln`（已包含 Aqua.Net），按 F5。
+
+**命令列**：Aqua.Net 的 net35 目標需要 Visual Studio 的 MSBuild，所以命令列請直接建置專案，不要建置整個 .sln：
+
 ```bat
-dotnet build PhotoMontage.sln
-dotnet test PhotoMontage.sln
+dotnet build src\PhotoMontage.App
+dotnet test tests\PhotoMontage.Core.Tests
 dotnet run --project src\PhotoMontage.App -- C:\Photos\a.jpg C:\Photos\b.jpg
 ```
+
+Aqua.Net 的影片控制項依賴 LibVLC（約 200 MB 原生檔）；蒙太奇不播放影片，`Directory.Build.targets` 會把它排除在輸出之外。
 
 ## 掛進 iPhoto.Net
 

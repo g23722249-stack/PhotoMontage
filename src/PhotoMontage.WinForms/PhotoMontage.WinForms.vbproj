@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- 蒙太奇編輯器 UI 與對外 API。iPhoto.Net 只需參考此專案。 -->
+  <!-- 蒙太奇編輯器 UI（Aqua 控制項）與對外 API。iPhoto.Net 只需參考此專案。 -->
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PhotoMontage.Core\PhotoMontage.Core.vbproj" />
     <ProjectReference Include="..\PhotoMontage.Imaging\PhotoMontage.Imaging.vbproj" />
+    <ProjectReference Include="$(AquaNetProject)" />
   </ItemGroup>
 
 </Project>

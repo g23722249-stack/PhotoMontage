@@ -13,4 +13,14 @@
     <!-- 讓 net8.0-windows 專案也能在非 Windows 的 CI 上編譯 -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
+
+  <!-- Aqua 控制項（與 iPhoto.Net 共用）。預設位置：C:\專案\RunTime\Aqua.Net；
+       放在別處時可用 dotnet build -p:AquaNetProject=路徑 或在此修改。 -->
+  <PropertyGroup>
+    <AquaNetProject Condition="'$(AquaNetProject)' == ''">$(MSBuildThisFileDirectory)..\RunTime\Aqua.Net\Aqua.Net.vbproj</AquaNetProject>
+    <!-- Aqua.Net 的影片控制項依賴 LibVLC（約 200 MB 原生檔）；蒙太奇不播放影片，不複製到輸出。
+         只影響本方案的專案，iPhoto.Net 依它自己的設定處理。 -->
+    <VlcWindowsX64Enabled>false</VlcWindowsX64Enabled>
+    <VlcWindowsX86Enabled>false</VlcWindowsX86Enabled>
+  </PropertyGroup>
 </Project>

@@ -1,0 +1,14 @@
+<Project>
+  <!-- Aqua.Net 透過專案參考帶進 LibVLC 原生檔（libvlc\...，約 200 MB）。
+       蒙太奇不播放影片，從本方案各專案的輸出中排除；iPhoto.Net 不受影響。 -->
+  <Target Name="PhotoMontageExcludeLibVlc" AfterTargets="GetCopyToOutputDirectoryItems">
+    <ItemGroup>
+      <_SourceItemsToCopyToOutputDirectory Remove="@(_SourceItemsToCopyToOutputDirectory)"
+          Condition="$([System.String]::Copy('%(_SourceItemsToCopyToOutputDirectory.TargetPath)').StartsWith('libvlc'))" />
+      <_SourceItemsToCopyToOutputDirectoryAlways Remove="@(_SourceItemsToCopyToOutputDirectoryAlways)"
+          Condition="$([System.String]::Copy('%(_SourceItemsToCopyToOutputDirectoryAlways.TargetPath)').StartsWith('libvlc'))" />
+      <AllItemsFullPathWithTargetPath Remove="@(AllItemsFullPathWithTargetPath)"
+          Condition="$([System.String]::Copy('%(AllItemsFullPathWithTargetPath.TargetPath)').StartsWith('libvlc'))" />
+    </ItemGroup>
+  </Target>
+</Project>
