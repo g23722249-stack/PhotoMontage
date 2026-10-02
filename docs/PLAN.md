@@ -288,6 +288,13 @@ End Class
 - 預覽與匯出共用 `FreeRenderer`；匯出逐張解碼、畫完即釋放。
 - 尚未實作：多選後一起縮放／旋轉（多選目前可移動、調整圖層與外框）、自由模式內的照片裁切編輯、等間距提示、拍立得底部文字。
 
+## 8.12 列印（已實作）
+
+- 右下角「列印…」（Ctrl+P），三種模式都可用；宿主可呼叫 `MontageEditorControl.ShowPrintDialog()`。
+- 對話框：印表機、紙張（標準下拉選單，可捲動）、方向（自動／直向／橫向，自動依作品比例）、版面（完整顯示／填滿紙張並置中裁切）、邊界（無／窄 0.25 吋／一般 0.5 吋）、份數；「印表機設定…」開啟 Windows 印表機對話框（相紙、品質等驅動程式選項）。
+- 左側即時預覽紙上的樣子，虛線標出印表機印不到的範圍；顯示紙上實際公分大小與裁切提示。
+- 列印時在背景以印表機解析度（上限 300 dpi、長邊上限 6000 像素）重新繪製作品，可取消；版面計算在 `Core/Export/PrintPlanner.vb`（有單元測試），繪製與匯出共用 `MontageExporter.RenderBitmap`。
+
 ## 9. 已確認的宿主資訊（iPhoto.Net）
 - SDK 樣式 vbproj，`net8.0-windows`，WinForms，`PlatformTarget=x86`（Jet 4.0），`Option Strict Off`，自訂 `Sub Main`。
 - 已用模擬相同設定的宿主專案實測：可 `ProjectReference` 本專案並呼叫 `MontageEditor.ShowDialog`、`MontageEditorControl`，建置無警告。

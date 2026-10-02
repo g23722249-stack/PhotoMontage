@@ -60,6 +60,41 @@ Public Class MosaicExporter
         Return New ExportResult(settings.FilePath, size, warnings)
     End Function
 
+    ''' <summary>以指定尺寸繪製整張馬賽克並回傳 Bitmap，由呼叫端釋放（列印用）。</summary>
+    ''' <exception cref="OperationCanceledException">已取消。</exception>
+    Public Function RenderBitmap(project As MontageProject, size As Size, progress As IProgress(Of ExportProgress),
+                                 cancellationToken As CancellationToken, warnings As List(Of String)) As Bitmap
+        If Not project.Mosaic.IsGenerated Then Throw New InvalidOperationException("請先產生馬賽克。")
+
+        Dim snapshot As New MontageProject()
+        snapshot.Photos.AddRange(project.Photos)
+        DesignState.Capture(project).ApplyTo(snapshot)
+
+        Dim bounds As New RectangleF(0, 0, size.Width, size.Height)
+        Dim cellSize As New SizeF(bounds.Width / snapshot.Mosaic.Columns, bounds.Height / snapshot.Mosaic.Rows)
+        progress?.Report(New ExportProgress(0, 1, "繪製馬賽克…"))
+
+        Dim budget = If(Environment.Is64BitProcess, 384L, 96L) * 1024 * 1024
+        Using tiles As New TileSource(_importer, cellSize, budget, warnings)
+            Dim target As Bitmap = Nothing
+            Dim output As New Bitmap(size.Width, size.Height, PixelFormat.Format24bppRgb)
+            Try
+                target = LoadTarget(snapshot, warnings)
+                Using g = Graphics.FromImage(output)
+                    RenderBand(g, snapshot, bounds, bounds, tiles, target, cancellationToken)
+                End Using
+                cancellationToken.ThrowIfCancellationRequested()
+                progress?.Report(New ExportProgress(1, 1, "完成"))
+                Return output
+            Catch
+                output.Dispose()
+                Throw
+            Finally
+                target?.Dispose()
+            End Try
+        End Using
+    End Function
+
     Private Sub ExportJpeg(project As MontageProject, settings As ExportSettings, size As Size, bounds As RectangleF,
                            tiles As TileSource, target As Bitmap, progress As IProgress(Of ExportProgress), ct As CancellationToken)
         Using output As New Bitmap(size.Width, size.Height, PixelFormat.Format24bppRgb)
@@ -215,5 +250,13 @@ Public Class MontageExporter
                            progress As IProgress(Of ExportProgress), cancellationToken As CancellationToken) As ExportResult
         If project.Mode = MontageMode.Mosaic Then Return _mosaic.Export(project, settings, progress, cancellationToken)
         Return _collage.Export(project, settings, progress, cancellationToken)
+    End Function
+
+    ''' <summary>以指定尺寸繪製整張作品並回傳 Bitmap，由呼叫端釋放（列印與預覽用）。</summary>
+    ''' <exception cref="OperationCanceledException">已取消。</exception>
+    Public Function RenderBitmap(project As MontageProject, size As Size, progress As IProgress(Of ExportProgress),
+                                 cancellationToken As CancellationToken, warnings As List(Of String)) As Bitmap
+        If project.Mode = MontageMode.Mosaic Then Return _mosaic.RenderBitmap(project, size, progress, cancellationToken, warnings)
+        Return _collage.RenderBitmap(project, size, progress, cancellationToken, warnings)
     End Function
 End Class

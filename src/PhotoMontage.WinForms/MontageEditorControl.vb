@@ -52,6 +52,7 @@ Public Class MontageEditorControl
     Private ReadOnly _ratioCombo As Aqua.DropDownList
     Private ReadOnly _canvas As CollageCanvas
     Private ReadOnly _exportButton As PillButton
+    Private ReadOnly _printButton As PillButton
     Private ReadOnly _stylePanel As StylePanel
     Private ReadOnly _textPanel As TextPanel
     Private ReadOnly _tabs As Aqua.TabControl
@@ -150,6 +151,9 @@ Public Class MontageEditorControl
 
         _exportButton = New PillButton() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Enabled = False}
         AddHandler _exportButton.Click, Sub(s, e) ShowExportDialog()
+        _printButton = New PillButton() With {.Text = "列印…", .Dock = DockStyle.Right, .Width = 100, .Enabled = False}
+        _toolTip.SetToolTip(_printButton, "列印（Ctrl+P）")
+        AddHandler _printButton.Click, Sub(s, e) ShowPrintDialog()
 
         ' 「版面」頁
         Dim ratioLabel As New Label() With {.Text = "畫布比例", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 0, 0, 2), .BackColor = Color.Transparent}
@@ -213,7 +217,12 @@ Public Class MontageEditorControl
 
         Dim right As New Panel() With {.Dock = DockStyle.Right, .Width = 250, .Padding = New Padding(4)}
         right.Controls.Add(_tabs)
-        right.Controls.Add(PillButton.Docked(_exportButton, DockStyle.Bottom, spacing:=4))
+        Dim outputRow As New Panel() With {.Dock = DockStyle.Bottom, .Height = PillButton.DefaultHeight + 8, .Padding = New Padding(0, 4, 0, 4)}
+        _exportButton.Dock = DockStyle.Fill
+        outputRow.Controls.Add(_exportButton)
+        outputRow.Controls.Add(New Panel() With {.Dock = DockStyle.Right, .Width = 6})
+        outputRow.Controls.Add(_printButton)
+        right.Controls.Add(outputRow)
 
         ' 工具列
         _undoButton = New PillButton() With {.Text = "復原", .Width = 76, .Enabled = False}
@@ -615,6 +624,7 @@ Public Class MontageEditorControl
             _strip.UsedPhotoIds = collageUsed
             _exportButton.Enabled = collageUsed.Count > 0
         End If
+        _printButton.Enabled = _exportButton.Enabled
         _canvas.Invalidate()
     End Sub
 
@@ -1027,17 +1037,11 @@ Public Class MontageEditorControl
 
 #End Region
 
-#Region "匯出"
+#Region "匯出與列印"
 
     ''' <summary>開啟匯出對話框。匯出成功時觸發 <see cref="Exported"/> 並回傳檔案路徑；取消時回傳 Nothing。</summary>
     Public Function ShowExportDialog() As String
-        If IsMosaicMode Then
-            If Not _project.Mosaic.IsGenerated Then Return Nothing
-        ElseIf IsFreeMode Then
-            If _project.Free.Items.Count = 0 Then Return Nothing
-        ElseIf Not _project.Collage.Cells.Exists(Function(c) c.PhotoId IsNot Nothing) Then
-            Return Nothing
-        End If
+        If Not HasOutputContent() Then Return Nothing
 
         If _importing AndAlso MessageBox.Show(Me, "還有照片正在讀取中，讀取中的照片不會出現在作品裡。仍要匯出嗎？", "匯出",
                                                MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Return Nothing
@@ -1056,6 +1060,29 @@ Public Class MontageEditorControl
 
         OnExported(New MontageExportedEventArgs(result.OutputPath))
         Return result.OutputPath
+    End Function
+
+    ''' <summary>開啟列印對話框。已送出列印時回傳 True。</summary>
+    Public Function ShowPrintDialog() As Boolean
+        If Not HasOutputContent() Then Return False
+        If _importing AndAlso MessageBox.Show(Me, "還有照片正在讀取中，讀取中的照片不會被印出。仍要列印嗎？", "列印",
+                                               MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Return False
+
+        Using dlg As New PrintSetupDialog(_project, New MontageExporter(_importer), _options.AquaColor)
+            If dlg.ShowDialog(Me) <> DialogResult.OK Then Return False
+            If dlg.Warnings.Count > 0 Then
+                MessageBox.Show(Me, "已送出列印，但有以下問題：" & vbLf & vbLf & String.Join(vbLf, dlg.Warnings.Take(20)),
+                                "列印", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            End If
+        End Using
+        Return True
+    End Function
+
+    ''' <summary>目前模式下是否有可匯出／列印的內容。</summary>
+    Private Function HasOutputContent() As Boolean
+        If IsMosaicMode Then Return _project.Mosaic.IsGenerated
+        If IsFreeMode Then Return _project.Free.Items.Count > 0
+        Return _project.Collage.Cells.Exists(Function(c) c.PhotoId IsNot Nothing)
     End Function
 
     Private Sub ShowExportCompleted(path As String)
@@ -1118,6 +1145,9 @@ Public Class MontageEditorControl
                     Return True
                 Case Keys.Control Or Keys.Y, Keys.Control Or Keys.Shift Or Keys.Z
                     Redo()
+                    Return True
+                Case Keys.Control Or Keys.P
+                    If _printButton.Enabled Then ShowPrintDialog()
                     Return True
             End Select
         End If

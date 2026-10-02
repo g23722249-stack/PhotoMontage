@@ -51,14 +51,33 @@ Public Class CollageExporter
                            progress As IProgress(Of ExportProgress), cancellationToken As CancellationToken) As ExportResult
         If String.IsNullOrWhiteSpace(settings.FilePath) Then Throw New ArgumentException("未指定輸出檔案。", NameOf(settings))
 
-        ' 複製一份設計，避免匯出途中 UI 修改專案
+        Dim size = settings.GetOutputSize(project.CanvasAspect)
+        Dim invalid = ExportPlanner.ValidateOutputSize(size)
+        If invalid IsNot Nothing Then Throw New InvalidOperationException(invalid)
+
+        Dim warnings As New List(Of String)
+        Using output = RenderBitmap(project, size, progress, cancellationToken, warnings)
+            output.SetResolution(settings.Dpi, settings.Dpi)
+            cancellationToken.ThrowIfCancellationRequested()
+            progress?.Report(New ExportProgress(0, 1, "儲存檔案…"))
+            ImageFileWriter.SaveBitmap(output, settings)
+        End Using
+
+        progress?.Report(New ExportProgress(1, 1, "完成"))
+        Return New ExportResult(settings.FilePath, size, warnings)
+    End Function
+
+    ''' <summary>
+    ''' 以指定尺寸繪製整張作品（拼貼或自由拼貼）並回傳 Bitmap，由呼叫端釋放。匯出與列印共用。
+    ''' 無法讀取的照片加入 <paramref name="warnings"/>。
+    ''' </summary>
+    ''' <exception cref="OperationCanceledException">已取消。</exception>
+    Public Function RenderBitmap(project As MontageProject, size As Size, progress As IProgress(Of ExportProgress),
+                                 cancellationToken As CancellationToken, warnings As List(Of String)) As Bitmap
+        ' 複製一份設計，避免繪製途中 UI 修改專案
         Dim snapshot As New MontageProject With {.Mode = project.Mode}
         snapshot.Photos.AddRange(project.Photos)
         DesignState.Capture(project).ApplyTo(snapshot)
-
-        Dim size = settings.GetOutputSize(snapshot.CanvasAspect)
-        Dim invalid = ExportPlanner.ValidateOutputSize(size)
-        If invalid IsNot Nothing Then Throw New InvalidOperationException(invalid)
 
         Dim bounds As New RectangleF(0, 0, size.Width, size.Height)
         Dim edges = PlanDecodeEdges(snapshot, bounds)
@@ -67,50 +86,44 @@ Public Class CollageExporter
                        snapshot.Free.Items.Where(Function(i) snapshot.FindPhoto(i.PhotoId) IsNot Nothing).Count(),
                        snapshot.Collage.Cells.Where(Function(c) snapshot.FindPhoto(c.PhotoId) IsNot Nothing).Count()) + 1
         Dim completed = 0
-        Dim warnings As New List(Of String)
         progress?.Report(New ExportProgress(0, total, "準備中…"))
 
         Dim background As Bitmap = Nothing
+        Dim output As New Bitmap(size.Width, size.Height, PixelFormat.Format24bppRgb)
         Try
             If snapshot.BackgroundImagePath IsNot Nothing Then
                 background = LoadBackground(snapshot.BackgroundImagePath, Math.Max(size.Width, size.Height), warnings)
             End If
-
-            Using output As New Bitmap(size.Width, size.Height, PixelFormat.Format24bppRgb)
-                output.SetResolution(settings.Dpi, settings.Dpi)
-                Using g = Graphics.FromImage(output)
-                    Dim options As New RenderOptions With {
-                        .HighQuality = True,
-                        .BackgroundImage = background,
-                        .ReleaseImage = Sub(asset, image)
-                                            image.Dispose()
-                                            completed += 1
-                                            progress?.Report(New ExportProgress(completed, total, asset.FileName))
-                                        End Sub}
-                    Dim getImage As Func(Of PhotoAsset, Image) =
-                        Function(asset)
-                            cancellationToken.ThrowIfCancellationRequested()
-                            Dim edge = 0
-                            edges.TryGetValue(asset.Id, edge)
-                            Return LoadPhoto(asset, edge, warnings)
-                        End Function
-                    If free Then
-                        FreeRenderer.Render(g, snapshot, bounds, getImage, options)
-                    Else
-                        CollageRenderer.Render(g, snapshot, bounds, getImage, options)
-                    End If
-                End Using
-
-                cancellationToken.ThrowIfCancellationRequested()
-                progress?.Report(New ExportProgress(completed, total, "儲存檔案…"))
-                ImageFileWriter.SaveBitmap(output, settings)
+            Using g = Graphics.FromImage(output)
+                Dim options As New RenderOptions With {
+                    .HighQuality = True,
+                    .BackgroundImage = background,
+                    .ReleaseImage = Sub(asset, image)
+                                        image.Dispose()
+                                        completed += 1
+                                        progress?.Report(New ExportProgress(completed, total, asset.FileName))
+                                    End Sub}
+                Dim getImage As Func(Of PhotoAsset, Image) =
+                    Function(asset)
+                        cancellationToken.ThrowIfCancellationRequested()
+                        Dim edge = 0
+                        edges.TryGetValue(asset.Id, edge)
+                        Return LoadPhoto(asset, edge, warnings)
+                    End Function
+                If free Then
+                    FreeRenderer.Render(g, snapshot, bounds, getImage, options)
+                Else
+                    CollageRenderer.Render(g, snapshot, bounds, getImage, options)
+                End If
             End Using
+            cancellationToken.ThrowIfCancellationRequested()
+            Return output
+        Catch
+            output.Dispose()
+            Throw
         Finally
             background?.Dispose()
         End Try
-
-        progress?.Report(New ExportProgress(total, total, "完成"))
-        Return New ExportResult(settings.FilePath, size, warnings)
     End Function
 
     ''' <summary>每張照片需要解碼的長邊（同一張照片放在多格時取最大）。</summary>

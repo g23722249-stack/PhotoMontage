@@ -91,6 +91,7 @@ editor.AddPhotos(GetSelectedPhotoPaths())   ' 立即返回，背景讀取
 | `CancelImport()` / `IsImporting` | 取消／查詢匯入 |
 | `Undo()` / `Redo()` | 復原／重做 |
 | `ShowExportDialog()` | 開啟匯出對話框，回傳檔案路徑或 Nothing |
+| `ShowPrintDialog()` | 開啟列印對話框（選印表機、紙張、方向、邊界、完整顯示／填滿），已送出列印時回傳 True；快速鍵 Ctrl+P |
 | `Exported` 事件 | 匯出成功，`e.OutputPath` 為檔案路徑 |
 
 ## 4. 發行
