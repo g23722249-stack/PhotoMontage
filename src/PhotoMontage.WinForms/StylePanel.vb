@@ -14,6 +14,8 @@ Friend Class StylePanel
     Private ReadOnly _background As ColorButton
     Private ReadOnly _bgImageLabel As System.Windows.Forms.Label
     Private ReadOnly _clearBgImage As PillButton
+    ''' <summary>只適用於拼貼的設定（間距、圓角）。</summary>
+    Private ReadOnly _collageOnly As New List(Of Control)
 
     ''' <summary>即將變更（供復原記錄）。</summary>
     Public Event ChangeStarting As EventHandler(Of ChangeStartingEventArgs)
@@ -25,12 +27,14 @@ Friend Class StylePanel
     Public Event BackgroundImageRequested As EventHandler(Of FilesDroppedEventArgs)
 
     Public Sub New()
-        AddLabel("間距")
+        _collageOnly.Add(AddLabel("間距"))
         _gap = Add(New LabeledSlider(0, 16, Function(v) $"{v * 0.5:0.#}%"))
+        _collageOnly.Add(_gap)
         AddHandler _gap.ValueChanged, Sub(s, e) Apply("style:gap", Sub(p) p.Collage.Gap = _gap.Value * 0.005F)
 
-        AddLabel("圓角")
+        _collageOnly.Add(AddLabel("圓角"))
         _radius = Add(New LabeledSlider(0, 50, Function(v) $"{v * 2}%"))
+        _collageOnly.Add(_radius)
         AddHandler _radius.ValueChanged, Sub(s, e) Apply("style:radius", Sub(p) p.Collage.CornerRadius = _radius.Value / 100.0F)
 
         AddLabel("背景色")
@@ -48,6 +52,13 @@ Friend Class StylePanel
         Dim hint = AddLabel("背景圖會鋪滿整張畫布，從格子間距與空格中露出。")
         hint.ForeColor = SystemColors.GrayText
         hint.MaximumSize = New Size(200, 0)
+    End Sub
+
+    ''' <summary>拼貼模式顯示間距與圓角；自由拼貼只需要背景設定。</summary>
+    Public Sub SetCollageOptionsVisible(visible As Boolean)
+        For Each c In _collageOnly
+            c.Visible = visible
+        Next
     End Sub
 
     Public Sub Bind(project As MontageProject)

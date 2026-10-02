@@ -276,6 +276,18 @@ End Class
 - `MontageOptions.AquaColor` 設定所有 Aqua 控制項的主題色，宿主可傳入自己的設定。
 - LibVLC 原生檔（約 200 MB）由 `Directory.Build.targets` 排除在本方案輸出之外；獨立版約 5 MB。
 
+## 8.11 自由拼貼（已實作）
+
+- 第三種模式「自由拼貼」：照片不受格線限制，可任意擺放、縮放、旋轉、重疊。
+- 模型：`FreeLayoutSettings.Items`（由下到上）；每張 `FreeItem` 存中心點、相對畫布的寬度、內框比例、角度、外框（無／白邊／拍立得）、外框寬度、陰影與裁切。存在 `DesignState`，可復原，舊快照仍可載入。
+- 畫布操作：拖曳移動；拖四角等比例縮放；拖上方圓點旋轉（Shift 每 15° 吸附）；滾輪縮放；空白處框選、Ctrl+點選多選；方向鍵微調（Shift 10 px）；Delete 刪除、Ctrl+A 全選、Esc 取消選取。
+- 對齊吸附：靠近其他照片或畫布的邊緣與中心會吸附並顯示參考線，按住 Alt 暫時關閉。
+- 浮動工具列：移到最上層、上移一層、下移一層、移到最下層、複製、移除。
+- 右側「自由」分頁：外框樣式與寬度、大小、角度、陰影、圖層、套用外框到全部；整張作品的「隨性程度」、自動散佈、整齊排列。
+- 照片進入：切換到自由模式或匯入新照片時自動擺放；從縮圖拖到畫布則放在放開的位置；上限 30 張。
+- 預覽與匯出共用 `FreeRenderer`；匯出逐張解碼、畫完即釋放。
+- 尚未實作：多選後一起縮放／旋轉（多選目前可移動、調整圖層與外框）、自由模式內的照片裁切編輯、等間距提示、拍立得底部文字。
+
 ## 9. 已確認的宿主資訊（iPhoto.Net）
 - SDK 樣式 vbproj，`net8.0-windows`，WinForms，`PlatformTarget=x86`（Jet 4.0），`Option Strict Off`，自訂 `Sub Main`。
 - 已用模擬相同設定的宿主專案實測：可 `ProjectReference` 本專案並呼叫 `MontageEditor.ShowDialog`、`MontageEditorControl`，建置無警告。

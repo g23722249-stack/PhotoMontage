@@ -60,6 +60,11 @@ Public Class MontageEditorControl
     Private ReadOnly _styleTab As Aqua.TabPage
     Private ReadOnly _mosaicTab As Aqua.TabPage
     Private ReadOnly _mosaicPanel As MosaicPanel
+    Private ReadOnly _freePanel As FreePanel
+    Private ReadOnly _freeTab As Aqua.TabPage
+    ''' <summary>自由拼貼中曾經放上畫布的照片；之後匯入的新照片才會自動放上，使用者移除的不會被放回去。</summary>
+    Private ReadOnly _freeSeen As New HashSet(Of String)
+    Private _arrangeSeed As Integer = 1
     Private ReadOnly _modeButtons As SegmentedChoice
     Private ReadOnly _undoButton As PillButton
     Private ReadOnly _redoButton As PillButton
@@ -194,6 +199,18 @@ Public Class MontageEditorControl
         _mosaicTab = New Aqua.TabPage("馬賽克")
         _mosaicTab.Controls.Add(_mosaicPanel)
 
+        ' 「自由拼貼」頁
+        _freePanel = New FreePanel() With {.Dock = DockStyle.Fill}
+        AddHandler _freePanel.ChangeStarting, Sub(s, e) RecordUndo(e.Key)
+        AddHandler _freePanel.ItemsChanged, Sub(s, e) OnFreeItemsChanged()
+        AddHandler _freePanel.ArrangeRequested, Sub(s, e) ArrangeFree(e.Tidy)
+        AddHandler _freePanel.CommandRequested, Sub(s, e) _canvas.ExecuteFreeCommand(e.Command)
+        AddHandler _canvas.FreeSelectionChanged, Sub(s, e) _freePanel.SetSelection(_canvas.SelectedFreeItems)
+        AddHandler _canvas.FreeItemsChanged, Sub(s, e) OnFreeItemsChanged()
+        AddHandler _canvas.FreePhotoDropped, Sub(s, e) AddPhotosToFree({_project.FindPhoto(e.PhotoId)}, e.Position)
+        _freeTab = New Aqua.TabPage("自由拼貼")
+        _freeTab.Controls.Add(_freePanel)
+
         Dim right As New Panel() With {.Dock = DockStyle.Right, .Width = 250, .Padding = New Padding(4)}
         right.Controls.Add(_tabs)
         right.Controls.Add(PillButton.Docked(_exportButton, DockStyle.Bottom, spacing:=4))
@@ -207,7 +224,7 @@ Public Class MontageEditorControl
         AddHandler _redoButton.Click, Sub(s, e) Redo()
         Dim addTextButton As New PillButton() With {.Text = "新增文字", .Width = 100}
         AddHandler addTextButton.Click, Sub(s, e) AddText()
-        _modeButtons = New SegmentedChoice("拼貼", "馬賽克") With {.Width = 160}
+        _modeButtons = New SegmentedChoice("拼貼", "自由拼貼", "馬賽克") With {.Width = 240}
         AddHandler _modeButtons.SelectedChanged, Sub(s, e) OnModeChanged()
         Dim toolbar As New FlowLayoutPanel() With {.Dock = DockStyle.Top, .AutoSize = True, .WrapContents = False, .Padding = New Padding(6, 4, 6, 4)}
         Dim modeLabel As New Label() With {.Text = "模式", .AutoSize = True, .Margin = New Padding(0, 7, 6, 0)}
@@ -247,13 +264,14 @@ Public Class MontageEditorControl
         SyncLayoutPickers()
         _stylePanel.Bind(_project)
         _mosaicPanel.Bind(_project)
+        _freePanel.Bind(_project)
         ApplyModeUi()
         ApplyLayout(reassign:=True)
         _history.Clear()
 
         ' 主題色：含目前沒有顯示的分頁
         AquaTheme.Apply(Me, options.AquaColor)
-        For Each page In {_layoutTab, _styleTab, _mosaicTab, _textTab}
+        For Each page In {_layoutTab, _styleTab, _mosaicTab, _freeTab, _textTab}
             AquaTheme.Apply(page, options.AquaColor)
         Next
     End Sub
@@ -423,6 +441,7 @@ Public Class MontageEditorControl
         For Each cell In _project.Collage.Cells
             If cell.PhotoId IsNot Nothing AndAlso ids.Contains(cell.PhotoId) Then cell.PhotoId = Nothing
         Next
+        If _project.Free.Items.RemoveAll(Function(i) ids.Contains(i.PhotoId)) > 0 Then _canvas.ClampInteraction()
         ' 被移除的素材在馬賽克中改以灰色格子顯示
         If IsMosaicMode AndAlso _project.Mosaic.Tiles.Any(Function(t) t IsNot Nothing AndAlso ids.Contains(t)) Then RebuildMosaicPreview()
         OnCellsChanged()
@@ -439,6 +458,10 @@ Public Class MontageEditorControl
     ''' <summary>雙擊縮圖：放進第一個空格；已在畫布上則不動。</summary>
     Private Sub OnStripItemActivated(sender As Object, e As PhotosEventArgs)
         Dim asset = e.Photos(0)
+        If IsFreeMode Then
+            AddPhotosToFree({asset}, Nothing)
+            Return
+        End If
         If asset.Status <> PhotoStatus.Ready OrElse IsAutoLayout Then Return
         Dim cells = _project.Collage.Cells
         If cells.Exists(Function(c) c.PhotoId = asset.Id) Then Return
@@ -537,6 +560,7 @@ Public Class MontageEditorControl
         ' 自動排版：照片變了就整個重排；固定版型：只把新照片補進空格（馬賽克模式下也維持拼貼版面）
         ApplyLayout(reassign:=IsAutoLayout)
         UpdateMosaicStatus()
+        If IsFreeMode Then AutoPlaceNewFreePhotos()
     End Sub
 
     ''' <summary>依目前版型更新格子。<paramref name="reassign"/> 為 True 時重建格子並重新分配所有照片。</summary>
@@ -575,7 +599,8 @@ Public Class MontageEditorControl
     ''' <summary>格子內容改變後：更新縮圖勾選標記、釋放不再使用的預覽影像、重繪。</summary>
     Private Sub OnCellsChanged()
         Dim collageUsed = New HashSet(Of String)(_project.Collage.Cells.Where(Function(c) c.PhotoId IsNot Nothing).Select(Function(c) c.PhotoId))
-        Dim keep = If(IsMosaicMode, New HashSet(Of String)(), collageUsed)
+        Dim freeUsed = New HashSet(Of String)(_project.Free.Items.Select(Function(i) i.PhotoId))
+        Dim keep = If(IsMosaicMode, New HashSet(Of String)(), If(IsFreeMode, freeUsed, collageUsed))
         For Each id In _previewImages.Keys.Where(Function(k) Not keep.Contains(k)).ToList()
             _previewImages(id).Dispose()
             _previewImages.Remove(id)
@@ -583,6 +608,9 @@ Public Class MontageEditorControl
         If IsMosaicMode Then
             _strip.UsedPhotoIds = New HashSet(Of String)(_project.Mosaic.Tiles.Where(Function(t) t IsNot Nothing))
             _exportButton.Enabled = _project.Mosaic.IsGenerated
+        ElseIf IsFreeMode Then
+            _strip.UsedPhotoIds = freeUsed
+            _exportButton.Enabled = _project.Free.Items.Count > 0
         Else
             _strip.UsedPhotoIds = collageUsed
             _exportButton.Enabled = collageUsed.Count > 0
@@ -614,15 +642,28 @@ Public Class MontageEditorControl
         End Get
     End Property
 
+    Private ReadOnly Property IsFreeMode As Boolean
+        Get
+            Return _project.Mode = MontageMode.Free
+        End Get
+    End Property
+
+    ''' <summary>分段按鈕的順序：拼貼、自由拼貼、馬賽克。</summary>
+    Private Shared ReadOnly ModeOrder As MontageMode() = {MontageMode.Collage, MontageMode.Free, MontageMode.Mosaic}
+
     Private Sub OnModeChanged()
         If _suppressModeEvents Then Return
-        Dim mode = If(_modeButtons.SelectedIndex = 1, MontageMode.Mosaic, MontageMode.Collage)
+        Dim index = _modeButtons.SelectedIndex
+        If index < 0 OrElse index >= ModeOrder.Length Then Return
+        Dim mode = ModeOrder(index)
         If mode = _project.Mode Then Return
         RecordUndo()
         _project.Mode = mode
         ApplyModeUi()
         If IsMosaicMode Then
             ApplyMosaicRatio(recordUndo:=False) ' 依目前畫布重算列數，格子保持接近正方形
+        ElseIf IsFreeMode Then
+            AutoPlaceNewFreePhotos()
         Else
             ApplyLayout(reassign:=IsAutoLayout)
         End If
@@ -631,11 +672,13 @@ Public Class MontageEditorControl
     ''' <summary>依模式切換右側分頁、畫布與狀態。</summary>
     Private Sub ApplyModeUi()
         _suppressModeEvents = True
-        Dim modeIndex = If(IsMosaicMode, 1, 0)
+        Dim modeIndex = Array.IndexOf(ModeOrder, _project.Mode)
         If _modeButtons.SelectedIndex <> modeIndex Then _modeButtons.SelectedIndex = modeIndex
         _suppressModeEvents = False
 
-        Dim pages = If(IsMosaicMode, {_mosaicTab, _textTab}, {_layoutTab, _styleTab, _textTab})
+        Dim pages = If(IsMosaicMode, {_mosaicTab, _textTab},
+                    If(IsFreeMode, {_freeTab, _styleTab, _textTab}, {_layoutTab, _styleTab, _textTab}))
+        _stylePanel.SetCollageOptionsVisible(Not IsFreeMode)
         If Not _tabs.TabPages.SequenceEqual(pages) Then
             Dim selected = _tabs.SelectedTab
             _tabs.TabPages.Clear()
@@ -646,7 +689,103 @@ Public Class MontageEditorControl
         End If
         _mosaicPanel.RefreshFromProject()
         _canvas.ResetInteraction()
+        _freePanel.SetSelection(_canvas.SelectedFreeItems)
         UpdateMosaicStatus()
+        OnCellsChanged()
+    End Sub
+
+#End Region
+
+#Region "自由拼貼"
+
+    ''' <summary>
+    ''' 把還沒放過畫布的照片自動放上去（不超過上限）。畫布原本是空的就整體散佈，否則新照片散落在畫布上。
+    ''' </summary>
+    Private Sub AutoPlaceNewFreePhotos()
+        For Each item In _project.Free.Items
+            _freeSeen.Add(item.PhotoId)
+        Next
+        Dim room = _importer.Limits.MaxFreeItems - _project.Free.Items.Count
+        If room <= 0 Then Return
+        Dim fresh = _project.Photos.Where(Function(p) p.Status = PhotoStatus.Ready AndAlso Not _freeSeen.Contains(p.Id)).Take(room).ToList()
+        If fresh.Count = 0 Then Return
+
+        Dim wasEmpty = _project.Free.Items.Count = 0
+        Dim added = fresh.Select(Function(p) NewFreeItem(p)).ToList()
+        For Each p In fresh
+            _freeSeen.Add(p.Id)
+        Next
+        If wasEmpty Then
+            _project.Free.Items.AddRange(added)
+            FreeArrange.Apply(_project.Free, _project.CanvasAspect, NextSeed())
+        Else
+            ' 只散佈新照片，放在既有照片上層
+            Dim temp As New FreeLayoutSettings With {.Looseness = Math.Max(0.5F, _project.Free.Looseness)}
+            temp.Items.AddRange(added)
+            FreeArrange.Apply(temp, _project.CanvasAspect, NextSeed())
+            _project.Free.Items.AddRange(temp.Items)
+        End If
+        OnFreeItemsChanged()
+    End Sub
+
+    ''' <summary>手動加入（拖放或雙擊縮圖）。<paramref name="position"/> 為 Nothing 時放在畫布中央附近。</summary>
+    Private Sub AddPhotosToFree(photos As IEnumerable(Of PhotoAsset), position As PointF?)
+        Dim ready = photos.Where(Function(p) p IsNot Nothing AndAlso p.Status = PhotoStatus.Ready).ToList()
+        If ready.Count = 0 Then Return
+        If _project.Free.Items.Count + ready.Count > _importer.Limits.MaxFreeItems Then
+            MessageBox.Show(Me, $"自由拼貼最多放 {_importer.Limits.MaxFreeItems} 張照片。", "自由拼貼", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+
+        RecordUndo()
+        Dim rng As New Random(NextSeed())
+        Dim added As New List(Of FreeItem)
+        For Each p In ready
+            Dim item = NewFreeItem(p)
+            Dim center = If(position, New PointF(CSng(0.4 + rng.NextDouble() * 0.2), CSng(0.4 + rng.NextDouble() * 0.2)))
+            item.CenterX = center.X
+            item.CenterY = center.Y
+            item.Rotation = CSng((rng.NextDouble() * 2 - 1) * 6 * _project.Free.Looseness)
+            _project.Free.Items.Add(item)
+            _freeSeen.Add(p.Id)
+            added.Add(item)
+        Next
+        _canvas.SelectFreeItems(added.Select(Function(i) i.Id))
+        OnFreeItemsChanged()
+    End Sub
+
+    ''' <summary>新照片的預設外觀：沿用目前選取照片的外框設定，沒有選取時用白邊＋陰影。</summary>
+    Private Function NewFreeItem(photo As PhotoAsset) As FreeItem
+        Dim template = _canvas.SelectedFreeItems.FirstOrDefault()
+        Return New FreeItem With {
+            .PhotoId = photo.Id,
+            .InnerAspect = CSng(photo.AspectRatio),
+            .Width = 0.28F,
+            .Frame = If(template?.Frame, Core.FrameStyle.White),
+            .FrameWidth = If(template?.FrameWidth, 0.04F),
+            .Shadow = If(template?.Shadow, True)}
+    End Function
+
+    Private Sub ArrangeFree(tidy As Boolean)
+        If _project.Free.Items.Count = 0 Then
+            AutoPlaceNewFreePhotos()
+            Return
+        End If
+        RecordUndo()
+        Dim saved = _project.Free.Looseness
+        If tidy Then _project.Free.Looseness = 0
+        FreeArrange.Apply(_project.Free, _project.CanvasAspect, NextSeed())
+        _project.Free.Looseness = saved
+        OnFreeItemsChanged()
+    End Sub
+
+    Private Function NextSeed() As Integer
+        _arrangeSeed += 1
+        Return _arrangeSeed * 7919
+    End Function
+
+    Private Sub OnFreeItemsChanged()
+        _freePanel.SetSelection(_canvas.SelectedFreeItems)
         OnCellsChanged()
     End Sub
 
@@ -894,6 +1033,8 @@ Public Class MontageEditorControl
     Public Function ShowExportDialog() As String
         If IsMosaicMode Then
             If Not _project.Mosaic.IsGenerated Then Return Nothing
+        ElseIf IsFreeMode Then
+            If _project.Free.Items.Count = 0 Then Return Nothing
         ElseIf Not _project.Collage.Cells.Exists(Function(c) c.PhotoId IsNot Nothing) Then
             Return Nothing
         End If
@@ -964,6 +1105,7 @@ Public Class MontageEditorControl
         _stylePanel.RefreshFromProject()
         ApplyModeUi()
         If IsMosaicMode Then RebuildMosaicPreview()
+        _freePanel.RefreshFromProject()
         OnTextSelectionChanged()
     End Sub
 
@@ -1094,7 +1236,7 @@ Public Class MontageEditorControl
             _mosaicPreview?.Dispose()
             _mosaicPreview = Nothing
             ' 不在 TabControl 中的分頁不會被自動釋放
-            For Each page In {_layoutTab, _styleTab, _mosaicTab, _textTab}
+            For Each page In {_layoutTab, _styleTab, _mosaicTab, _freeTab, _textTab}
                 page.Dispose()
             Next
         End If
