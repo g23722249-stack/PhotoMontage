@@ -41,11 +41,12 @@ Friend Class MosaicPanel
     Public Sub New()
         AddLabel("主圖")
         _targetLabel = Add(New System.Windows.Forms.Label() With {.AutoEllipsis = True, .Height = 20, .BackColor = Color.Transparent})
-        _useSelected = New PillButton() With {.Text = "用左側選取的照片", .Width = 128}
+        _useSelected = New PillButton() With {.Text = "用左側選取的照片"}
         AddHandler _useSelected.Click, Sub(s, e) RaiseEvent UseSelectedAsTargetRequested(Me, EventArgs.Empty)
-        Dim pick As New PillButton() With {.Text = "選擇檔案…", .Width = 84}
+        Dim pick As New PillButton() With {.Text = "選擇檔案…"}
         AddHandler pick.Click, AddressOf OnPickTarget
-        AddRow(_useSelected, pick)
+        Add(_useSelected)
+        Add(pick)
 
         AddLabel("畫布比例")
         _ratio = Add(New Aqua.DropDownList())
@@ -86,7 +87,7 @@ Friend Class MosaicPanel
         _generate.Margin = New Padding(0, 14, 0, 4)
         AddHandler _generate.Click, Sub(s, e) RaiseEvent GenerateRequested(Me, EventArgs.Empty)
         _progress = Add(New Aqua.ProgressBar() With {.Visible = False})
-        _cancel = New PillButton() With {.Text = "取消", .Width = 70, .Visible = False}
+        _cancel = New PillButton() With {.Text = "取消", .Width = 76, .Visible = False}
         AddHandler _cancel.Click, Sub(s, e) RaiseEvent CancelRequested(Me, EventArgs.Empty)
         AddRow(_cancel)
         _status = AddLabel("")

@@ -192,11 +192,20 @@ End Module
 Friend Class PillButton
     Inherits Aqua.ThinButton
 
-    ''' <summary>統一的按鈕高度（ThinButton 預設 36，配合現有版面改為 28）。</summary>
-    Public Const DefaultHeight As Integer = 28
+    ''' <summary>統一的按鈕高度（ThinButton 預設 36，配合現有版面改為 30）。</summary>
+    Public Const DefaultHeight As Integer = 30
+
+    ''' <summary>
+    ''' 按鈕文字：較大的粗體深藍字。ThinButton 平常會淡化圖片，預設的白色小字在淺色背景上看不清楚。
+    ''' 所有按鈕共用同一個字型物件（控制項不會釋放指派給它的 Font）。
+    ''' </summary>
+    Private Shared ReadOnly ButtonFont As New Font("Microsoft JhengHei UI", 10.0F, FontStyle.Bold)
+    Private Shared ReadOnly ButtonTextColor As System.Drawing.Color = System.Drawing.Color.FromArgb(16, 54, 110)
 
     Public Sub New()
         Size = New Size(90, DefaultHeight)
+        Font = ButtonFont
+        ForeColor = ButtonTextColor
     End Sub
 
     ''' <summary>

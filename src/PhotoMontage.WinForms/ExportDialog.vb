@@ -78,7 +78,7 @@ Friend Class ExportDialog
         AddRow(layout, "JPEG 品質", _quality)
 
         _path = New Aqua.TextBox() With {.Dock = DockStyle.Fill}
-        _browse = New PillButton() With {.Text = "瀏覽…", .Width = 70, .Dock = DockStyle.Right}
+        _browse = New PillButton() With {.Text = "瀏覽…", .Width = 80, .Dock = DockStyle.Right}
         AddHandler _browse.Click, AddressOf OnBrowse
         Dim pathRow As New System.Windows.Forms.Panel() With {.Dock = DockStyle.Fill, .Height = _browse.Height, .BackColor = Color.Transparent}
         pathRow.Controls.Add(_path)

@@ -39,9 +39,9 @@ Friend Class StylePanel
 
         AddLabel("背景圖")
         _bgImageLabel = Add(New System.Windows.Forms.Label() With {.AutoEllipsis = True, .Height = 20, .ForeColor = SystemColors.GrayText, .BackColor = Color.Transparent})
-        Dim pick As New PillButton() With {.Text = "選擇圖片…", .Width = 100}
+        Dim pick As New PillButton() With {.Text = "選擇圖片…", .Width = 116}
         AddHandler pick.Click, AddressOf OnPickBackgroundImage
-        _clearBgImage = New PillButton() With {.Text = "移除", .Width = 70}
+        _clearBgImage = New PillButton() With {.Text = "移除", .Width = 76}
         AddHandler _clearBgImage.Click, Sub(s, e) Apply(Nothing, Sub(p) p.BackgroundImagePath = Nothing)
         AddRow(pick, _clearBgImage)
 

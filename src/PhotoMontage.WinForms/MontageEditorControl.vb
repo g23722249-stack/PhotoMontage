@@ -89,7 +89,7 @@ Public Class MontageEditorControl
 
         _progressBar = New Aqua.ProgressBar() With {.Dock = DockStyle.Top}
         _progressLabel = New Label() With {.Dock = DockStyle.Fill, .TextAlign = ContentAlignment.MiddleLeft}
-        Dim cancel As New PillButton() With {.Text = "取消", .Width = 60}
+        Dim cancel As New PillButton() With {.Text = "取消", .Width = 70}
         AddHandler cancel.Click, Sub(s, e) CancelImport()
         Dim progressRow As New Panel() With {.Dock = DockStyle.Fill}
         progressRow.Controls.Add(_progressLabel)
@@ -199,13 +199,13 @@ Public Class MontageEditorControl
         right.Controls.Add(PillButton.Docked(_exportButton, DockStyle.Bottom, spacing:=4))
 
         ' 工具列
-        _undoButton = New PillButton() With {.Text = "復原", .Width = 70, .Enabled = False}
+        _undoButton = New PillButton() With {.Text = "復原", .Width = 76, .Enabled = False}
         _toolTip.SetToolTip(_undoButton, "復原（Ctrl+Z）")
         AddHandler _undoButton.Click, Sub(s, e) Undo()
-        _redoButton = New PillButton() With {.Text = "重做", .Width = 70, .Enabled = False}
+        _redoButton = New PillButton() With {.Text = "重做", .Width = 76, .Enabled = False}
         _toolTip.SetToolTip(_redoButton, "重做（Ctrl+Y）")
         AddHandler _redoButton.Click, Sub(s, e) Redo()
-        Dim addTextButton As New PillButton() With {.Text = "新增文字", .Width = 84}
+        Dim addTextButton As New PillButton() With {.Text = "新增文字", .Width = 100}
         AddHandler addTextButton.Click, Sub(s, e) AddText()
         _modeButtons = New SegmentedChoice("拼貼", "馬賽克") With {.Width = 160}
         AddHandler _modeButtons.SelectedChanged, Sub(s, e) OnModeChanged()
