@@ -6,7 +6,7 @@ Imports PhotoMontage.Core
 ''' <summary>
 ''' 蒙太奇編輯器本體。可放進宿主自己的視窗，或由 <see cref="MontageEditor.ShowDialog"/> 以對話框開啟。
 ''' </summary>
-''' <remarks>M3：照片匯入、版型畫布、樣式、文字圖層、復原重做；匯出於 M4 實作。所有公開成員都必須在 UI 執行緒呼叫。</remarks>
+''' <remarks>所有公開成員都必須在 UI 執行緒呼叫。</remarks>
 Public Class MontageEditorControl
     Inherits UserControl
 
@@ -117,7 +117,8 @@ Public Class MontageEditorControl
                                               End Sub
         AddHandler _canvas.FilesDropped, Sub(s, e) AddPhotos(e.Paths)
 
-        _exportButton = New Button() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Height = 32, .Enabled = False}
+        _exportButton = New Button() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Height = 36, .Enabled = False}
+        AddHandler _exportButton.Click, Sub(s, e) ShowExportDialog()
 
         ' 「版面」頁
         Dim ratioLabel As New Label() With {.Text = "畫布比例", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 0, 0, 2)}
@@ -501,6 +502,7 @@ Public Class MontageEditorControl
             _previewImages.Remove(id)
         Next
         _strip.UsedPhotoIds = used
+        _exportButton.Enabled = used.Count > 0
         _canvas.Invalidate()
     End Sub
 
@@ -517,6 +519,43 @@ Public Class MontageEditorControl
         _previewImages(asset.Id) = bmp
         Return bmp
     End Function
+
+#End Region
+
+#Region "匯出"
+
+    ''' <summary>開啟匯出對話框。匯出成功時觸發 <see cref="Exported"/> 並回傳檔案路徑；取消時回傳 Nothing。</summary>
+    Public Function ShowExportDialog() As String
+        If Not _project.Collage.Cells.Exists(Function(c) c.PhotoId IsNot Nothing) Then Return Nothing
+
+        If _importing AndAlso MessageBox.Show(Me, "還有照片正在讀取中，讀取中的照片不會出現在作品裡。仍要匯出嗎？", "匯出",
+                                               MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Return Nothing
+
+        Dim result As ExportResult
+        Using dlg As New ExportDialog(_project, New CollageExporter(_importer), _options.DefaultExportFolder)
+            If dlg.ShowDialog(Me) <> DialogResult.OK OrElse dlg.Result Is Nothing Then Return Nothing
+            result = dlg.Result
+        End Using
+
+        If result.Warnings.Count > 0 Then
+            MessageBox.Show(Me, "作品已匯出，但有以下問題：" & vbLf & vbLf & String.Join(vbLf, result.Warnings.Take(20)),
+                            "匯出", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+        End If
+        If _options.ShowExportCompletedMessage Then ShowExportCompleted(result.OutputPath)
+
+        OnExported(New MontageExportedEventArgs(result.OutputPath))
+        Return result.OutputPath
+    End Function
+
+    Private Sub ShowExportCompleted(path As String)
+        Dim answer = MessageBox.Show(Me, $"已儲存：{vbLf}{path}{vbLf}{vbLf}要開啟檔案所在的資料夾嗎？", "匯出完成",
+                                     MessageBoxButtons.YesNo, MessageBoxIcon.Information)
+        If answer <> DialogResult.Yes Then Return
+        Try
+            Process.Start(New ProcessStartInfo("explorer.exe", "/select," & ChrW(34) & path & ChrW(34)) With {.UseShellExecute = True})
+        Catch ex As System.ComponentModel.Win32Exception
+        End Try
+    End Sub
 
 #End Region
 

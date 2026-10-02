@@ -7,6 +7,7 @@ Friend Class MontageEditorForm
 
     Private ReadOnly _editor As MontageEditorControl
     Private ReadOnly _initialPhotos As IList(Of String)
+    Private ReadOnly _closeAfterExport As Boolean
 
     Public Property Result As MontageResult = MontageResult.Cancelled
 
@@ -19,6 +20,7 @@ Friend Class MontageEditorForm
         KeyPreview = True
 
         _initialPhotos = options.InitialPhotos
+        _closeAfterExport = options.CloseAfterExport
         _editor = New MontageEditorControl() With {.Dock = DockStyle.Fill}
         _editor.Initialize(options)
         AddHandler _editor.Exported, AddressOf OnExported
@@ -33,5 +35,9 @@ Friend Class MontageEditorForm
 
     Private Sub OnExported(sender As Object, e As MontageExportedEventArgs)
         Result = MontageResult.Exported(e.OutputPath)
+        If _closeAfterExport Then
+            DialogResult = DialogResult.OK
+            Close()
+        End If
     End Sub
 End Class

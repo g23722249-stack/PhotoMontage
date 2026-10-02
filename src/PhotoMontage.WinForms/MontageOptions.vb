@@ -12,4 +12,13 @@ Public Class MontageOptions
 
     ''' <summary>編輯器視窗標題；空白則用預設標題。</summary>
     Public Property Title As String
+
+    ''' <summary>
+    ''' 匯出成功後自動關閉編輯器，讓 <see cref="MontageEditor.ShowDialog"/> 立即回傳結果。
+    ''' 宿主程式（例如要把作品加回相簿）通常設為 True。
+    ''' </summary>
+    Public Property CloseAfterExport As Boolean
+
+    ''' <summary>匯出成功後顯示完成訊息，並可開啟檔案所在資料夾。</summary>
+    Public Property ShowExportCompletedMessage As Boolean = True
 End Class

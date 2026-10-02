@@ -13,7 +13,8 @@ Public Class ThumbnailCache
 
     Private Const FileExtension As String = ".thumb"
     Private Const Magic As Integer = &H43544D50 ' "PMTC"
-    Private Const FormatVersion As Integer = 1
+    ''' <summary>2：縮圖改為轉換到 sRGB，舊版快取一律重做。</summary>
+    Private Const FormatVersion As Integer = 2
 
     Private ReadOnly _codec As IImageCodec
     Private ReadOnly _directory As String

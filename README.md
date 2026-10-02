@@ -23,30 +23,19 @@ dotnet run --project src\PhotoMontage.App -- C:\Photos\a.jpg C:\Photos\b.jpg
 
 ## 掛進 iPhoto.Net
 
-1. 在 `iPhoto.Net.vbproj` 加入參考（路徑依實際 clone 位置調整）：
+完整步驟見 [docs/INTEGRATION.md](docs/INTEGRATION.md)。摘要：
 
-   ```xml
-   <ItemGroup>
-     <ProjectReference Include="..\..\PhotoMontage\src\PhotoMontage.WinForms\PhotoMontage.WinForms.vbproj" />
-   </ItemGroup>
-   ```
-
-   並把 `PhotoMontage.Core`、`PhotoMontage.Imaging`、`PhotoMontage.WinForms` 加進 iPhoto.Net 的 .sln。
-   函式庫為 AnyCPU，會隨 iPhoto 以 x86 載入，不需另外設定。
-
-2. 在選單或工具列呼叫：
+1. 把 `PhotoMontage.Core`、`PhotoMontage.Imaging`、`PhotoMontage.WinForms` 加進 iPhoto.Net 的方案，iPhoto.Net 參考 `PhotoMontage.WinForms`。
+2. 選單事件中呼叫：
 
    ```vb
    Dim result = PhotoMontage.MontageEditor.ShowDialog(Me, New PhotoMontage.MontageOptions With {
        .InitialPhotos = selectedFilePaths,
-       .DefaultExportFolder = albumFolder
+       .DefaultExportFolder = albumFolder,
+       .CloseAfterExport = True
    })
-   If result.Success Then
-       ' result.OutputPath 為匯出的作品
-   End If
+   If result.Success Then AddPhotoToAlbum(result.OutputPath)
    ```
-
-   或把 `PhotoMontage.MontageEditorControl` 放進自己的視窗，用 `AddPhotos(paths)` 加入照片（立即返回、背景讀取），訂閱 `Exported` 事件。
 
 ## 縮圖快取
 

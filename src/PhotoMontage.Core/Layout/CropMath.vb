@@ -45,6 +45,11 @@ Public Module CropMath
         Return result
     End Function
 
+    ''' <summary>實際使用的縮放倍率（限制在 1 ~ 5）。</summary>
+    Public Function EffectiveScale(crop As CropInfo) As Single
+        Return ClampScale(crop.Scale)
+    End Function
+
     ''' <summary>照片剛好蓋滿格子時，照片像素 → 格子像素的倍率。</summary>
     Public Function CoverScale(imageSize As SizeF, cellSize As SizeF) As Single
         Return Math.Max(cellSize.Width / imageSize.Width, cellSize.Height / imageSize.Height)

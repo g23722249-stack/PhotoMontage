@@ -14,6 +14,11 @@ Public Class RenderOptions
     Public Property BackgroundImage As Image
 
     Public Property DrawTexts As Boolean = True
+
+    ''' <summary>
+    ''' 每格畫完後呼叫，讓呼叫端釋放 <c>getImage</c> 傳回的影像（匯出時逐格解碼原圖用）；Nothing 表示影像由呼叫端自行管理。
+    ''' </summary>
+    Public Property ReleaseImage As Action(Of PhotoAsset, Image)
 End Class
 
 ''' <summary>
@@ -108,15 +113,19 @@ Public Module CollageRenderer
             End If
 
             Dim state = g.Save()
-            g.SetClip(path, CombineMode.Intersect)
-            Dim src = GetSourceRect(image, cell, rect)
-            ' 目標稍微外擴半像素，避免與裁切路徑之間出現縫隙
-            Dim dest = Rectangle.FromLTRB(CInt(Math.Floor(rect.Left)), CInt(Math.Floor(rect.Top)), CInt(Math.Ceiling(rect.Right)), CInt(Math.Ceiling(rect.Bottom)))
-            Dim sx = src.Width / rect.Width, sy = src.Height / rect.Height
-            g.DrawImage(image, dest,
-                        src.X - (rect.Left - dest.Left) * sx, src.Y - (rect.Top - dest.Top) * sy,
-                        dest.Width * sx, dest.Height * sy, GraphicsUnit.Pixel, attrs)
-            g.Restore(state)
+            Try
+                g.SetClip(path, CombineMode.Intersect)
+                Dim src = GetSourceRect(image, cell, rect)
+                ' 目標稍微外擴半像素，避免與裁切路徑之間出現縫隙
+                Dim dest = Rectangle.FromLTRB(CInt(Math.Floor(rect.Left)), CInt(Math.Floor(rect.Top)), CInt(Math.Ceiling(rect.Right)), CInt(Math.Ceiling(rect.Bottom)))
+                Dim sx = src.Width / rect.Width, sy = src.Height / rect.Height
+                g.DrawImage(image, dest,
+                            src.X - (rect.Left - dest.Left) * sx, src.Y - (rect.Top - dest.Top) * sy,
+                            dest.Width * sx, dest.Height * sy, GraphicsUnit.Pixel, attrs)
+            Finally
+                g.Restore(state)
+                options.ReleaseImage?.Invoke(asset, image)
+            End Try
         End Using
     End Sub
 

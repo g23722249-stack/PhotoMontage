@@ -8,6 +8,7 @@ Imports PhotoMontage.Core
 ''' <summary>
 ''' 以 Windows Imaging Component 解碼。JPEG 可在解碼時直接縮小（DCT scaling），
 ''' 4800 萬像素照片產生 512px 縮圖只需約 1 MB 記憶體；安裝 HEIF 延伸模組後可讀 HEIC。
+''' 內嵌色彩描述檔（例如 iPhone 的 Display P3）會轉換成 sRGB；描述檔損壞時改為直接使用原始像素。
 ''' 所有 WPF 物件都在方法內建立並 Freeze，可由多個背景執行緒同時呼叫。
 ''' </summary>
 Public NotInheritable Class WicImageCodec
@@ -52,7 +53,7 @@ Public NotInheritable Class WicImageCodec
                 End If
                 bmp.EndInit()
                 bmp.Freeze()
-                Return ToDecodedImage(bmp)
+                Return ToDecodedImage(bmp, TryGetColorContext(stream))
             End Function)
     End Function
 
@@ -85,6 +86,36 @@ Public NotInheritable Class WicImageCodec
                     Return ToDecodedImage(decoder.Frames(0))
                 End Using
             End Function)
+    End Function
+
+    ''' <summary>讀取內嵌的色彩描述檔；沒有或無法讀取時回傳 Nothing。</summary>
+    Private Shared Function TryGetColorContext(stream As Stream) As ColorContext
+        Try
+            stream.Position = 0
+            Dim frame = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames(0)
+            Dim contexts = frame.ColorContexts
+            If contexts Is Nothing OrElse contexts.Count = 0 Then Return Nothing
+            Return contexts(0)
+        Catch ex As Exception When TypeOf ex Is NotSupportedException OrElse TypeOf ex Is InvalidOperationException OrElse
+                                   TypeOf ex Is ArgumentException OrElse TypeOf ex Is COMException OrElse
+                                   TypeOf ex Is FileFormatException OrElse TypeOf ex Is OverflowException
+            Return Nothing
+        End Try
+    End Function
+
+    ''' <summary>轉成 BGRA；有色彩描述檔時先轉換到 sRGB，轉換失敗就用原始像素。</summary>
+    Private Shared Function ToDecodedImage(source As BitmapSource, profile As ColorContext) As DecodedImage
+        If profile IsNot Nothing Then
+            Try
+                Dim srgb As New ColorContext(PixelFormats.Bgra32)
+                Return ToDecodedImage(New ColorConvertedBitmap(source, profile, srgb, PixelFormats.Bgra32))
+            Catch ex As Exception When TypeOf ex Is ArgumentException OrElse TypeOf ex Is InvalidOperationException OrElse
+                                       TypeOf ex Is NotSupportedException OrElse TypeOf ex Is COMException OrElse
+                                       TypeOf ex Is FileFormatException
+                ' 描述檔與像素格式不符或描述檔損壞
+            End Try
+        End If
+        Return ToDecodedImage(source)
     End Function
 
     Private Shared Function ToDecodedImage(source As BitmapSource) As DecodedImage
