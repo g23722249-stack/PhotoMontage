@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 獨立執行的殼：只負責開啟 MontageEditor，功能都在 PhotoMontage.WinForms。 -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>PhotoMontage.App</RootNamespace>
+    <AssemblyName>PhotoMontage</AssemblyName>
+    <StartupObject>PhotoMontage.App.Program</StartupObject>
+    <MyType>WindowsFormsWithCustomSubMain</MyType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PhotoMontage.WinForms\PhotoMontage.WinForms.vbproj" />
+  </ItemGroup>
+
+</Project>

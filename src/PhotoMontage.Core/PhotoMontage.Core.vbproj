@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 資料模型、版型、排版與馬賽克演算法、渲染。不參考 WinForms。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>PhotoMontage.Core</RootNamespace>
+    <AssemblyName>PhotoMontage.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PhotoMontage.Core.Tests" />
+  </ItemGroup>
+
+</Project>

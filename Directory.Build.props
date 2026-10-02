@@ -1,0 +1,16 @@
+<Project>
+  <!-- 所有專案共用設定。函式庫為 AnyCPU，可載入 iPhoto.Net 的 x86 行程。 -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+    <OptionCompare>Binary</OptionCompare>
+    <Deterministic>true</Deterministic>
+    <Company>TechnoSoft</Company>
+    <Product>PhotoMontage</Product>
+    <Version>0.1.0</Version>
+    <!-- 讓 net8.0-windows 專案也能在非 Windows 的 CI 上編譯 -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+</Project>

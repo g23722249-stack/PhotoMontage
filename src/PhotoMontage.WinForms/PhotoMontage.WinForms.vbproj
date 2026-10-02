@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 蒙太奇編輯器 UI 與對外 API。iPhoto.Net 只需參考此專案。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>PhotoMontage</RootNamespace>
+    <AssemblyName>PhotoMontage.WinForms</AssemblyName>
+    <MyType>Empty</MyType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PhotoMontage.Core\PhotoMontage.Core.vbproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,6 +1,6 @@
 # 蒙太奇相片功能規劃
 
-> 狀態：v2 · 2026-10-02
+> 狀態：v3 · 2026-10-02（M0 已完成）
 > 已確認：**桌面程式**、可單獨執行、也能掛進 `iPhoto.Net.vbproj`；不需帳號/雲端；MVP 含文字圖層；不做影片輸出。
 
 ## 1. 功能定義
@@ -44,7 +44,9 @@ PhotoMontage.sln
 ### 2.1 技術選型
 - **語言：VB.NET**，與 iPhoto.Net 一致，方便同一個團隊維護、除錯時可直接逐步進入。
 - **UI：WinForms**，提供 `UserControl`（可塞進宿主自己的視窗）和 `Form`（彈出式對話框）兩種用法。
-- **目標框架：多目標 `net48;net8.0-windows`**，不論 iPhoto.Net 是 .NET Framework 還是 .NET 8 都能參考。確認宿主版本後可只留一個。
+- **目標框架：`net8.0-windows`**，與 iPhoto.Net 相同；SDK 樣式專案，可直接用 `ProjectReference`。
+- **平台：函式庫一律 AnyCPU**。iPhoto.Net 因 Jet 4.0 固定 `x86`，AnyCPU 的 DLL 會跟著以 32 位元載入，不需另外建置。
+- **Option Strict On**（本專案自己的設定，與 iPhoto.Net 的 `Off` 互不影響）。
 - **繪圖：System.Drawing（GDI+）**。拼貼足夠；馬賽克用 `LockBits` 直接讀寫像素，並用 `Parallel.For` 平行計算。
 - **Core 不參考 WinForms**，之後若要換 WPF UI 或命令列批次處理，演算法不用動。
 
@@ -77,7 +79,7 @@ Dim bmp As Bitmap = MontageRenderer.Render(project, New Size(3000, 3000))
 - 獨立版 `PhotoMontage.App` 也是呼叫 `MontageEditor.ShowDialog(Nothing, opts)`，兩邊行為一致。
 
 ### 2.3 掛進 iPhoto.Net 的方式（擇一）
-1. **ProjectReference**（同一個方案一起開發時）：把三個專案加進 iPhoto.Net 的 .sln，在 `iPhoto.Net.vbproj` 加
+1. **ProjectReference**（建議，同一個方案一起開發時）：把 `PhotoMontage.Core`、`PhotoMontage.WinForms` 加進 iPhoto.Net 的 .sln，在 `iPhoto.Net.vbproj` 加（假設 repo clone 在 `C:\專案\PhotoMontage`）
    `<ProjectReference Include="..\..\PhotoMontage\src\PhotoMontage.WinForms\PhotoMontage.WinForms.vbproj" />`
 2. **DLL 參考**：直接參考建置好的 `PhotoMontage.Core.dll`、`PhotoMontage.WinForms.dll`。
 3. **本機 NuGet 套件**：`dotnet pack` 後放在本機資料夾當套件來源，版本管理最乾淨。
@@ -163,7 +165,12 @@ End Class
 - 讀檔用 `Image.FromStream` 並複製成新 Bitmap，避免 GDI+ 鎖住原始檔（宿主可能同時要移動或刪除該檔）。
 - 所有 `Bitmap` / `Graphics` 都要 `Using` 釋放，防止長時間在宿主中執行時記憶體洩漏。
 - HEIC：GDI+ 不支援。先用 WIC（需安裝 Windows「HEIF 影像延伸模組」）嘗試，失敗時提示使用者；若一定要支援可再評估 Magick.NET。
-- GDI+ 單張 Bitmap 實際上限約 2～4 億像素（受記憶體影響），馬賽克超大圖需**分塊渲染**後再逐塊寫入檔案。
+- **32 位元記憶體預算**：嵌入 iPhoto.Net 時是 x86 行程，位址空間最多約 4 GB，且大塊連續記憶體容易因碎片化配置失敗。
+  - 單張 Bitmap 上限暫定 **6400 萬像素**（32bpp 約 256 MB），超過就**分塊渲染**、逐塊寫入檔案。
+  - 縮圖快取用 LRU，記憶體中最多保留約 200 MB。
+  - 馬賽克素材只保留 64×64 縮圖與平均色，不保留原圖。
+  - 匯出前先估算記憶體需求，不足時提示降低解析度，避免宿主程式 `OutOfMemoryException` 崩潰。
+- 獨立執行版為 AnyCPU（64 位元），沒有上述限制，但演算法以 x86 預算設計，兩邊行為一致。
 - 高 DPI：表單設定 `AutoScaleMode.Dpi`，畫布繪製以實際像素計算。
 - 長時間工作用 `Async`/`Await` + `IProgress(Of T)` + `CancellationToken`，不卡住宿主 UI 執行緒。
 
@@ -171,7 +178,7 @@ End Class
 
 | 階段 | 內容 | 預估 |
 |------|------|------|
-| M0 | 方案骨架：Core / WinForms / App / Tests 四個專案、多目標框架、建置腳本 | 0.5 週 |
+| M0 ✅ | 方案骨架：Core / WinForms / App / Tests 四個專案、對外 API 雛形、內建版型與單元測試 | 0.5 週 |
 | M1 | 照片匯入、縮圖快取、EXIF 修正、對外 API 雛形（`MontageEditor.ShowDialog`） | 1 週 |
 | M2 | 拼貼：版型系統、渲染器、拖曳換位、格內取景 | 2 週 |
 | M3 | 樣式、**文字圖層**、復原重做 | 1.5 週 |
@@ -185,7 +192,6 @@ End Class
 - **整合測試**：建一個最小 WinForms 宿主，以 API 開啟編輯器並匯出，模擬 iPhoto.Net 的用法。
 - **效能基準**：500 張素材 × 100×100 格馬賽克的算圖時間與記憶體峰值。
 
-## 9. 待確認（影響 M0）
-1. `iPhoto.Net.vbproj` 的目標框架：.NET Framework 4.x 還是 .NET 6/8？（決定是否保留多目標）
-2. iPhoto.Net 的 UI 是 WinForms 還是 WPF？（若是 WPF，改用 `WindowsFormsHost` 嵌入，或 UI 層改做 WPF 版）
-3. 是 SDK 樣式的 vbproj（`<Project Sdk="...">`）還是舊式格式？（影響參考的寫法）
+## 9. 已確認的宿主資訊（iPhoto.Net）
+- SDK 樣式 vbproj，`net8.0-windows`，WinForms，`PlatformTarget=x86`（Jet 4.0），`Option Strict Off`，自訂 `Sub Main`。
+- 已用模擬相同設定的宿主專案實測：可 `ProjectReference` 本專案並呼叫 `MontageEditor.ShowDialog`、`MontageEditorControl`，建置無警告。
