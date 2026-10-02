@@ -4,7 +4,8 @@ Imports System.Windows.Forms
 Imports PhotoMontage.Core
 
 ''' <summary>
-''' 照片縮圖清單。只繪製可見範圍內的項目；支援多選、Delete 移除、拖曳調整順序、拖放檔案。
+''' 照片縮圖清單。只繪製可見範圍內的項目；支援多選、Delete 移除、拖曳調整順序、拖放檔案，
+''' 拖出清單外可把照片放到畫布上，雙擊照片放進第一個空格。
 ''' </summary>
 Friend Class PhotoStrip
     Inherits ScrollableControl
@@ -41,6 +42,11 @@ Friend Class PhotoStrip
     ''' <summary>從檔案總管拖放了檔案或資料夾。</summary>
     Public Event FilesDropped As EventHandler(Of FilesDroppedEventArgs)
 
+    ''' <summary>雙擊了照片。</summary>
+    Public Event ItemActivated As EventHandler(Of PhotosEventArgs)
+
+    Private _usedPhotoIds As ISet(Of String) = New HashSet(Of String)
+
     Public Sub New()
         SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.OptimizedDoubleBuffer Or
                  ControlStyles.UserPaint Or ControlStyles.ResizeRedraw Or ControlStyles.Selectable, True)
@@ -63,6 +69,17 @@ Friend Class PhotoStrip
         Get
             Return _items.Select(Function(i) i.Asset).ToList()
         End Get
+    End Property
+
+    ''' <summary>已放進畫布的照片 Id；這些照片會顯示勾選標記。</summary>
+    Public Property UsedPhotoIds As ISet(Of String)
+        Get
+            Return _usedPhotoIds
+        End Get
+        Set(value As ISet(Of String))
+            _usedPhotoIds = If(value, New HashSet(Of String))
+            Invalidate()
+        End Set
     End Property
 
     Public ReadOnly Property TileSize As Integer
@@ -119,6 +136,21 @@ Friend Class PhotoStrip
         If removed.Count = 0 Then Return
         RemoveRange(removed)
         RaiseEvent ItemsRemoved(Me, New PhotosEventArgs(removed))
+    End Sub
+
+    ''' <summary>依指定順序重排（未列出的照片維持原相對順序、排在後面），不觸發 <see cref="OrderChanged"/>。</summary>
+    Public Sub SetOrder(order As IEnumerable(Of PhotoAsset))
+        Dim rank As New Dictionary(Of PhotoAsset, Integer)
+        For Each a In order
+            If Not rank.ContainsKey(a) Then rank(a) = rank.Count
+        Next
+        Dim sorted = _items.Select(Function(item, i) (item, i)).
+            OrderBy(Function(x) If(rank.ContainsKey(x.item.Asset), rank(x.item.Asset), Integer.MaxValue)).
+            ThenBy(Function(x) x.i).
+            Select(Function(x) x.item).ToList()
+        _items.Clear()
+        _items.AddRange(sorted)
+        Invalidate()
     End Sub
 
     Private Sub Sort(comparison As Comparison(Of PhotoAsset), Optional bySequence As Boolean = False)
@@ -234,11 +266,29 @@ Friend Class PhotoStrip
                                       TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.WordBreak Or TextFormatFlags.EndEllipsis)
         End Select
 
+        If _usedPhotoIds.Contains(item.Asset.Id) Then DrawUsedBadge(g, bounds)
+
         If item.Selected Then
             Using pen As New Pen(SystemColors.Highlight, LogicalToDeviceUnits(3))
                 g.DrawRectangle(pen, Rectangle.Inflate(bounds, -1, -1))
             End Using
         End If
+    End Sub
+
+    Private Sub DrawUsedBadge(g As Graphics, bounds As Rectangle)
+        Dim size = LogicalToDeviceUnits(18)
+        Dim badge As New Rectangle(bounds.Right - size - 3, bounds.Top + 3, size, size)
+        g.SmoothingMode = SmoothingMode.AntiAlias
+        Using back As New SolidBrush(Color.FromArgb(220, 46, 160, 67))
+            g.FillEllipse(back, badge)
+        End Using
+        Using pen As New Pen(Color.White, LogicalToDeviceUnits(2))
+            g.DrawLines(pen, {
+                New PointF(badge.Left + size * 0.25F, badge.Top + size * 0.52F),
+                New PointF(badge.Left + size * 0.43F, badge.Top + size * 0.7F),
+                New PointF(badge.Left + size * 0.76F, badge.Top + size * 0.32F)})
+        End Using
+        g.SmoothingMode = SmoothingMode.Default
     End Sub
 
     Private Sub DrawInsertionMark(g As Graphics)
@@ -302,6 +352,10 @@ Friend Class PhotoStrip
                 Dim drag = SystemInformation.DragSize
                 _dragging = Math.Abs(e.X - _pressPoint.X) > drag.Width OrElse Math.Abs(e.Y - _pressPoint.Y) > drag.Height
             End If
+            If _dragging AndAlso Not ClientRectangle.Contains(e.Location) Then
+                StartDragOut()
+                Return
+            End If
             If _dragging Then
                 Dim index = GetInsertIndex(e.Location)
                 If index <> _dropIndex Then
@@ -330,6 +384,28 @@ Friend Class PhotoStrip
         _dragging = False
         _dropIndex = -1
         Invalidate()
+    End Sub
+
+    Protected Overrides Sub OnMouseDoubleClick(e As MouseEventArgs)
+        MyBase.OnMouseDoubleClick(e)
+        Dim index = HitTest(e.Location)
+        If e.Button = MouseButtons.Left AndAlso index >= 0 Then
+            RaiseEvent ItemActivated(Me, New PhotosEventArgs({_items(index).Asset}))
+        End If
+    End Sub
+
+    ''' <summary>拖出清單範圍：改用 OLE 拖放，讓畫布可以接收。</summary>
+    Private Sub StartDragOut()
+        Dim asset = _items(_pressIndex).Asset
+        _pressIndex = -1
+        _dragging = False
+        _dropIndex = -1
+        Invalidate()
+        If asset.Status <> PhotoStatus.Ready Then Return
+
+        Dim data As New DataObject()
+        data.SetData(CollageCanvas.PhotoDragFormat, asset.Id)
+        DoDragDrop(data, DragDropEffects.Move)
     End Sub
 
     Protected Overrides Sub OnKeyDown(e As KeyEventArgs)

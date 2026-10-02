@@ -3,6 +3,9 @@ Imports System.Drawing
 ''' <summary>內建拼貼版型。</summary>
 Public Module CollageTemplates
 
+    ''' <summary>依照片自動排版的版型 Id（見 <see cref="JustifiedLayout"/>）。</summary>
+    Public Const AutoId As String = "auto"
+
     ''' <summary>rows × columns 等分格。</summary>
     Public Function Grid(rows As Integer, columns As Integer) As CollageTemplate
         If rows < 1 Then Throw New ArgumentOutOfRangeException(NameOf(rows))

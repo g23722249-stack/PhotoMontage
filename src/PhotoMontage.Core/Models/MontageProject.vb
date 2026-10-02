@@ -17,6 +17,14 @@ Public Class MontageProject
 
     Public Property Texts As New List(Of TextLayer)
 
+    ''' <summary>畫布長寬比（寬 / 高）。</summary>
+    Public ReadOnly Property CanvasAspect As Double
+        Get
+            If CanvasSize.Height <= 0 Then Return 1.0
+            Return CanvasSize.Width / CanvasSize.Height
+        End Get
+    End Property
+
     Public Function FindPhoto(photoId As String) As PhotoAsset
         If String.IsNullOrEmpty(photoId) Then Return Nothing
         Return Photos.Find(Function(p) p.Id = photoId)

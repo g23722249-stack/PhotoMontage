@@ -210,8 +210,14 @@ Public Class PhotoImporterTests
         Using cts As New CancellationTokenSource()
             Dim progress As New SyncProgress(Of ImportProgress)(Sub(p) If p.Completed = 3 Then cts.Cancel())
 
-            Assert.ThrowsException(Of TaskCanceledException)(
-                Sub() importer.ProcessAsync(batch, progress, cts.Token).GetAwaiter().GetResult())
+            ' 依時機可能是 OperationCanceledException 或其子類別 TaskCanceledException
+            Dim thrown As Exception = Nothing
+            Try
+                importer.ProcessAsync(batch, progress, cts.Token).GetAwaiter().GetResult()
+            Catch ex As Exception
+                thrown = ex
+            End Try
+            Assert.IsInstanceOfType(thrown, GetType(OperationCanceledException))
         End Using
 
         Dim ready = batch.Assets.Where(Function(a) a.Status = PhotoStatus.Ready).Count()

@@ -6,7 +6,7 @@ Imports PhotoMontage.Core
 ''' <summary>
 ''' 蒙太奇編輯器本體。可放進宿主自己的視窗，或由 <see cref="MontageEditor.ShowDialog"/> 以對話框開啟。
 ''' </summary>
-''' <remarks>M1：照片匯入與縮圖清單；畫布與匯出於 M2/M4 實作。所有公開成員都必須在 UI 執行緒呼叫。</remarks>
+''' <remarks>M2：照片匯入、版型畫布、自動分配、換位與取景；樣式與匯出於 M3/M4 實作。所有公開成員都必須在 UI 執行緒呼叫。</remarks>
 Public Class MontageEditorControl
     Inherits UserControl
 
@@ -18,9 +18,16 @@ Public Class MontageEditorControl
     Private _importing As Boolean
     Private _options As New MontageOptions()
 
+    ''' <summary>放在格子裡的照片的預覽影像（由縮圖轉成的 GDI+ Bitmap），依照片 Id。</summary>
+    Private ReadOnly _previewImages As New Dictionary(Of String, Bitmap)
+    ''' <summary>照片清單變動後延遲更新版面，避免大量匯入時每張都重排。</summary>
+    Private ReadOnly _layoutTimer As New System.Windows.Forms.Timer() With {.Interval = 250}
+    Private _suppressTemplateEvents As Boolean
+
     Private ReadOnly _strip As PhotoStrip
     Private ReadOnly _templateList As ListBox
-    Private ReadOnly _canvas As Panel
+    Private ReadOnly _ratioCombo As ComboBox
+    Private ReadOnly _canvas As CollageCanvas
     Private ReadOnly _exportButton As Button
     Private ReadOnly _progressPanel As Panel
     Private ReadOnly _progressBar As ProgressBar
@@ -37,6 +44,8 @@ Public Class MontageEditorControl
         AddHandler _strip.FilesDropped, Sub(s, e) AddPhotos(e.Paths)
         AddHandler _strip.ItemsRemoved, AddressOf OnPhotosRemoved
         AddHandler _strip.OrderChanged, Sub(s, e) SyncPhotoOrder()
+        AddHandler _strip.ItemActivated, AddressOf OnStripItemActivated
+        AddHandler _layoutTimer.Tick, AddressOf OnLayoutTimerTick
 
         Dim addPhotosButton As New Button() With {.Text = "加入照片…", .Dock = DockStyle.Top, .Height = 32}
         AddHandler addPhotosButton.Click, AddressOf OnAddPhotosClick
@@ -64,17 +73,36 @@ Public Class MontageEditorControl
         left.Controls.Add(_failureLink)
         left.Controls.Add(_progressPanel)
 
+        _ratioCombo = New ComboBox() With {.Dock = DockStyle.Top, .DropDownStyle = ComboBoxStyle.DropDownList}
+        For Each preset In CanvasPresets.All
+            _ratioCombo.Items.Add(preset)
+        Next
+        AddHandler _ratioCombo.SelectedIndexChanged, AddressOf OnRatioChanged
+
         _templateList = New ListBox() With {.Dock = DockStyle.Fill, .IntegralHeight = False, .DisplayMember = NameOf(CollageTemplate.Name)}
+        _templateList.Items.Add(New CollageTemplate(CollageTemplates.AutoId, "自動排版（依照片）", Array.Empty(Of RectangleF)()))
         For Each t In CollageTemplates.BuiltIn
             _templateList.Items.Add(t)
         Next
         AddHandler _templateList.SelectedIndexChanged, AddressOf OnTemplateChanged
 
-        _canvas = New Panel() With {.Dock = DockStyle.Fill, .BackColor = Color.FromArgb(48, 48, 48)}
+        Dim autoAssign As New Button() With {.Text = "重新自動分配", .Dock = DockStyle.Bottom, .Height = 32}
+        AddHandler autoAssign.Click, Sub(s, e) ApplyLayout(reassign:=True)
+
+        _canvas = New CollageCanvas() With {.Dock = DockStyle.Fill, .Project = _project, .ImageProvider = AddressOf GetPreviewImage}
+        AddHandler _canvas.CellsChanged, Sub(s, e) OnCanvasCellsChanged()
+        AddHandler _canvas.FilesDropped, Sub(s, e) AddPhotos(e.Paths)
+
         _exportButton = New Button() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Height = 32, .Enabled = False}
 
-        Dim right As New Panel() With {.Dock = DockStyle.Right, .Width = 200, .Padding = New Padding(6)}
+        Dim ratioLabel As New Label() With {.Text = "畫布比例", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 0, 0, 2)}
+        Dim templateLabel As New Label() With {.Text = "版型", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 8, 0, 2)}
+        Dim right As New Panel() With {.Dock = DockStyle.Right, .Width = 220, .Padding = New Padding(6)}
         right.Controls.Add(_templateList)
+        right.Controls.Add(templateLabel)
+        right.Controls.Add(_ratioCombo)
+        right.Controls.Add(ratioLabel)
+        right.Controls.Add(autoAssign)
         right.Controls.Add(_exportButton)
 
         Controls.Add(_canvas)
@@ -100,8 +128,12 @@ Public Class MontageEditorControl
         _options = options
         _project.Mode = options.Mode
 
-        Dim initial = CollageTemplates.Find(_project.Collage.TemplateId)
-        If initial IsNot Nothing Then _templateList.SelectedItem = initial
+        _suppressTemplateEvents = True
+        _ratioCombo.SelectedItem = If(CanvasPresets.Find(_project.CanvasSize), CanvasPresets.All(0))
+        _templateList.SelectedItem = _templateList.Items.Cast(Of CollageTemplate)().
+            FirstOrDefault(Function(t) t.Id = _project.Collage.TemplateId)
+        _suppressTemplateEvents = False
+        ApplyLayout(reassign:=True)
     End Sub
 
     ''' <summary>
@@ -195,6 +227,7 @@ Public Class MontageEditorControl
             _strip.RefreshItem(p.Asset)
         ElseIf p.Thumbnail IsNot Nothing Then
             _strip.SetTile(p.Asset, BitmapConversion.ToBitmap(p.Thumbnail, _strip.TileSize))
+            ScheduleLayout()
         End If
     End Sub
 
@@ -258,30 +291,174 @@ Public Class MontageEditorControl
         For Each cell In _project.Collage.Cells
             If cell.PhotoId IsNot Nothing AndAlso ids.Contains(cell.PhotoId) Then cell.PhotoId = Nothing
         Next
-        _canvas.Invalidate()
+        OnCellsChanged()
+        ScheduleLayout()
     End Sub
 
     Private Sub SyncPhotoOrder()
         _project.Photos.Clear()
         _project.Photos.AddRange(_strip.Assets)
+        ' 自動排版依照片順序；固定版型不動使用者已排好的位置
+        If IsAutoLayout Then ScheduleLayout()
+    End Sub
+
+    ''' <summary>雙擊縮圖：放進第一個空格；已在畫布上則不動。</summary>
+    Private Sub OnStripItemActivated(sender As Object, e As PhotosEventArgs)
+        Dim asset = e.Photos(0)
+        If asset.Status <> PhotoStatus.Ready OrElse IsAutoLayout Then Return
+        Dim cells = _project.Collage.Cells
+        If cells.Exists(Function(c) c.PhotoId = asset.Id) Then Return
+        Dim target = cells.FindIndex(Function(c) c.PhotoId Is Nothing)
+        If target < 0 Then Return
+        PhotoAssignment.Place(cells, target, asset.Id)
+        OnCellsChanged()
     End Sub
 
 #End Region
 
+#Region "版面"
+
+    Private ReadOnly Property IsAutoLayout As Boolean
+        Get
+            Return _project.Collage.TemplateId = CollageTemplates.AutoId
+        End Get
+    End Property
+
+    Private ReadOnly Property CanvasSizeF As SizeF
+        Get
+            Return New SizeF(_project.CanvasSize.Width, _project.CanvasSize.Height)
+        End Get
+    End Property
+
     Private Sub OnTemplateChanged(sender As Object, e As EventArgs)
+        If _suppressTemplateEvents Then Return
         Dim template = TryCast(_templateList.SelectedItem, CollageTemplate)
         If template Is Nothing Then Return
 
         _project.Collage.TemplateId = template.Id
-        _project.Collage.Cells = template.CreateCells()
+        ApplyLayout(reassign:=True)
+        _canvas.ResetInteraction()
+    End Sub
+
+    Private Sub OnRatioChanged(sender As Object, e As EventArgs)
+        If _suppressTemplateEvents Then Return
+        Dim preset = TryCast(_ratioCombo.SelectedItem, CanvasPreset)
+        If preset Is Nothing Then Return
+
+        _project.CanvasSize = preset.SizeFor(CanvasPresets.DefaultLongEdge)
+        ' 格子形狀改變：自動排版重排；固定版型保留位置，只重設取景
+        If IsAutoLayout Then
+            ApplyLayout(reassign:=True)
+        Else
+            For Each c In _project.Collage.Cells
+                c.Crop = New CropInfo()
+            Next
+            _canvas.ResetInteraction()
+            OnCellsChanged()
+        End If
+    End Sub
+
+    ''' <summary>節流：最多每 250 ms 更新一次版面，大量匯入時畫布也會陸續出現照片。</summary>
+    Private Sub ScheduleLayout()
+        If Not _layoutTimer.Enabled Then _layoutTimer.Start()
+    End Sub
+
+    ''' <summary>
+    ''' 使用者在畫布上換位或放入照片。自動排版的格子是依照片順序產生的，
+    ''' 所以把新的位置順序寫回照片清單，再依新順序重排。
+    ''' </summary>
+    Private Sub OnCanvasCellsChanged()
+        If IsAutoLayout Then
+            Dim cellOrder = _project.Collage.Cells.Select(Function(c) c.PhotoId).ToList()
+            Dim readyOrder = _project.Photos.Where(Function(p) p.Status = PhotoStatus.Ready).Select(Function(p) p.Id).ToList()
+            If Not cellOrder.SequenceEqual(readyOrder) Then
+                Dim byId = _project.Photos.ToDictionary(Function(p) p.Id)
+                Dim placed = cellOrder.Where(Function(id) id IsNot Nothing AndAlso byId.ContainsKey(id)).Select(Function(id) byId(id)).ToList()
+                _strip.SetOrder(placed)
+                _project.Photos.Clear()
+                _project.Photos.AddRange(_strip.Assets)
+                ApplyLayout(reassign:=True)
+                Return
+            End If
+        End If
+        OnCellsChanged()
+    End Sub
+
+    Private Sub OnLayoutTimerTick(sender As Object, e As EventArgs)
+        _layoutTimer.Stop()
+        If IsDisposed Then Return
+        ' 自動排版：照片變了就整個重排；固定版型：只把新照片補進空格
+        ApplyLayout(reassign:=IsAutoLayout)
+    End Sub
+
+    ''' <summary>依目前版型更新格子。<paramref name="reassign"/> 為 True 時重建格子並重新分配所有照片。</summary>
+    Private Sub ApplyLayout(reassign As Boolean)
+        _layoutTimer.Stop()
+        Dim settings = _project.Collage
+
+        If IsAutoLayout Then
+            ' 保留每張照片的取景（相對值，格子形狀改變後仍然有效）
+            Dim crops = settings.Cells.Where(Function(c) c.PhotoId IsNot Nothing).
+                GroupBy(Function(c) c.PhotoId).ToDictionary(Function(g) g.Key, Function(g) g.First().Crop)
+            Dim ready = _project.Photos.Where(Function(p) p.Status = PhotoStatus.Ready).ToList()
+            Dim template = JustifiedLayout.Create(ready.Select(Function(p) p.AspectRatio).ToList(), _project.CanvasAspect)
+            settings.Cells = template.CreateCells()
+            For i = 0 To ready.Count - 1
+                settings.Cells(i).PhotoId = ready(i).Id
+                Dim crop As CropInfo = Nothing
+                If crops.TryGetValue(ready(i).Id, crop) Then settings.Cells(i).Crop = crop
+            Next
+        ElseIf reassign Then
+            Dim template = CollageTemplates.Find(settings.TemplateId)
+            If template Is Nothing Then Return
+            settings.Cells = template.CreateCells()
+            PhotoAssignment.AssignAll(settings.Cells, _project.Photos, CanvasSizeF)
+        Else
+            PhotoAssignment.FillEmpty(settings.Cells, _project.Photos, CanvasSizeF)
+        End If
+
+        _canvas.AllowClear = Not IsAutoLayout
+        If reassign AndAlso Not IsAutoLayout Then _canvas.ResetInteraction() Else _canvas.ClampInteraction()
+        OnCellsChanged()
+    End Sub
+
+    ''' <summary>格子內容改變後：更新縮圖勾選標記、釋放不再使用的預覽影像、重繪。</summary>
+    Private Sub OnCellsChanged()
+        Dim used = New HashSet(Of String)(_project.Collage.Cells.Where(Function(c) c.PhotoId IsNot Nothing).Select(Function(c) c.PhotoId))
+        For Each id In _previewImages.Keys.Where(Function(k) Not used.Contains(k)).ToList()
+            _previewImages(id).Dispose()
+            _previewImages.Remove(id)
+        Next
+        _strip.UsedPhotoIds = used
         _canvas.Invalidate()
     End Sub
+
+    ''' <summary>畫布要用的預覽影像：由縮圖快取轉成 Bitmap，放在格子裡的期間保留。</summary>
+    Private Function GetPreviewImage(asset As PhotoAsset) As Image
+        Dim bmp As Bitmap = Nothing
+        If _previewImages.TryGetValue(asset.Id, bmp) Then Return bmp
+
+        Try
+            bmp = BitmapConversion.ToBitmap(_importer.LoadThumbnail(asset))
+        Catch ex As IO.IOException
+            Return Nothing ' 原圖已被移走且快取也沒有
+        End Try
+        _previewImages(asset.Id) = bmp
+        Return bmp
+    End Function
+
+#End Region
 
     Protected Overrides Sub Dispose(disposing As Boolean)
         If disposing Then
             _pendingImports.Clear()
             _importCts.Cancel()
             _importCts.Dispose()
+            _layoutTimer.Dispose()
+            For Each bmp In _previewImages.Values
+                bmp.Dispose()
+            Next
+            _previewImages.Clear()
         End If
         MyBase.Dispose(disposing)
     End Sub

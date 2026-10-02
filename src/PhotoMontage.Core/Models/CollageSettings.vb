@@ -2,7 +2,8 @@ Imports System.Drawing
 
 ''' <summary>拼貼模式的版面設定。</summary>
 Public Class CollageSettings
-    Public Property TemplateId As String = "grid-2x2"
+    ''' <summary>版型 Id；<see cref="CollageTemplates.AutoId"/> 表示依照片自動排版。</summary>
+    Public Property TemplateId As String = CollageTemplates.AutoId
 
     ''' <summary>格子間距，以畫布短邊的比例表示（0~0.1）。</summary>
     Public Property Gap As Single = 0.01F
