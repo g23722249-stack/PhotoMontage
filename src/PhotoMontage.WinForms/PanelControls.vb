@@ -7,7 +7,7 @@ Friend Class ColorButton
 
     Private _color As Color = Color.White
     Private ReadOnly _swatch As System.Windows.Forms.Panel
-    Private ReadOnly _button As Aqua.FlashButton
+    Private ReadOnly _button As PillButton
 
     ''' <summary>使用者選了新顏色。</summary>
     Public Event ColorPicked As EventHandler
@@ -18,13 +18,13 @@ Friend Class ColorButton
     Public Sub New()
         BackColor = Color.Transparent
         _swatch = New System.Windows.Forms.Panel() With {.Dock = DockStyle.Left, .Width = 44, .BorderStyle = BorderStyle.FixedSingle}
-        _button = New Aqua.FlashButton() With {.Text = "選擇…", .Dock = DockStyle.Fill}
+        _button = New PillButton() With {.Text = "選擇…", .Dock = DockStyle.Fill}
         AddHandler _button.Click, AddressOf OnButtonClick
         Dim gap As New System.Windows.Forms.Panel() With {.Dock = DockStyle.Left, .Width = 6, .BackColor = Color.Transparent}
         Controls.Add(_button)
         Controls.Add(gap)
         Controls.Add(_swatch)
-        Height = Math.Max(26, _button.Height)
+        Height = PillButton.DefaultHeight
         UpdateSwatch()
     End Sub
 
@@ -80,7 +80,8 @@ Friend Class StackPanel
     End Function
 
     Public Function Add(Of T As Control)(control As T) As T
-        control.Margin = New Padding(0, 0, 0, 2)
+        ' 膠囊按鈕上下多留一點，避免看起來黏在一起
+        control.Margin = If(TypeOf control Is PillButton, New Padding(0, 2, 0, 4), New Padding(0, 0, 0, 2))
         Controls.Add(control)
         StretchChild(control)
         Return control
@@ -183,3 +184,28 @@ Friend Module AquaTheme
     End Sub
 
 End Module
+
+''' <summary>使用 Aqua.Button 內建預設樣式（膠囊形狀、白字）的按鈕，固定高度。</summary>
+Friend Class PillButton
+    Inherits Aqua.Button
+
+    Public Const DefaultHeight As Integer = 28
+
+    Public Sub New()
+        Size = New Size(90, DefaultHeight)
+    End Sub
+
+    ''' <summary>
+    ''' 把按鈕包在上下留白的容器中再停駐（Dock），連續停駐的按鈕之間才會有間距，不會黏在一起。
+    ''' </summary>
+    Public Shared Function Docked(button As PillButton, dock As DockStyle, Optional spacing As Integer = 3) As System.Windows.Forms.Panel
+        Dim host As New System.Windows.Forms.Panel() With {
+            .Dock = dock,
+            .Height = button.Height + spacing * 2,
+            .Padding = New Padding(0, spacing, 0, spacing),
+            .BackColor = Color.Transparent}
+        button.Dock = DockStyle.Fill
+        host.Controls.Add(button)
+        Return host
+    End Function
+End Class

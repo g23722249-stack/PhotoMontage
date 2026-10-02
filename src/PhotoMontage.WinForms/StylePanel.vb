@@ -13,7 +13,7 @@ Friend Class StylePanel
     Private ReadOnly _radius As LabeledSlider
     Private ReadOnly _background As ColorButton
     Private ReadOnly _bgImageLabel As System.Windows.Forms.Label
-    Private ReadOnly _clearBgImage As Aqua.FlashButton
+    Private ReadOnly _clearBgImage As PillButton
 
     ''' <summary>即將變更（供復原記錄）。</summary>
     Public Event ChangeStarting As EventHandler(Of ChangeStartingEventArgs)
@@ -39,9 +39,9 @@ Friend Class StylePanel
 
         AddLabel("背景圖")
         _bgImageLabel = Add(New System.Windows.Forms.Label() With {.AutoEllipsis = True, .Height = 20, .ForeColor = SystemColors.GrayText, .BackColor = Color.Transparent})
-        Dim pick As New Aqua.FlashButton() With {.Text = "選擇圖片…", .Width = 100}
+        Dim pick As New PillButton() With {.Text = "選擇圖片…", .Width = 100}
         AddHandler pick.Click, AddressOf OnPickBackgroundImage
-        _clearBgImage = New Aqua.FlashButton() With {.Text = "移除", .Width = 70}
+        _clearBgImage = New PillButton() With {.Text = "移除", .Width = 70}
         AddHandler _clearBgImage.Click, Sub(s, e) Apply(Nothing, Sub(p) p.BackgroundImagePath = Nothing)
         AddRow(pick, _clearBgImage)
 

@@ -33,7 +33,7 @@ Friend Class TextPanel
     Public Event DeleteRequested As EventHandler
 
     Public Sub New()
-        Dim addButton = Add(New Aqua.FlashButton() With {.Text = "新增文字"})
+        Dim addButton = Add(New PillButton() With {.Text = "新增文字"})
         AddHandler addButton.Click, Sub(s, e) RaiseEvent AddRequested(Me, EventArgs.Empty)
 
         _hint = AddLabel("在畫布上點選文字即可編輯。" & vbLf & "拖曳移動、拖曳上方圓點旋轉（按住 Shift 每 15°）、Ctrl+滾輪調整大小、雙擊編輯內容。")
@@ -87,7 +87,7 @@ Friend Class TextPanel
         _rotation = Editor(Add(New LabeledSlider(-180, 180, Function(v) $"{v}°")))
         AddHandler _rotation.ValueChanged, Sub(s, e) Apply("text:rotation", Sub(t) t.Rotation = _rotation.Value)
 
-        Dim delete = Editor(Add(New Aqua.FlashButton() With {.Text = "刪除這段文字"}))
+        Dim delete = Editor(Add(New PillButton() With {.Text = "刪除這段文字"}))
         delete.Margin = New Padding(0, 12, 0, 2)
         AddHandler delete.Click, Sub(s, e) RaiseEvent DeleteRequested(Me, EventArgs.Empty)
 

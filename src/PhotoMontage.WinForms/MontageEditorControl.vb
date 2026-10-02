@@ -51,7 +51,7 @@ Public Class MontageEditorControl
     ''' <summary>畫布比例，順序與 <see cref="CanvasPresets.All"/> 相同。</summary>
     Private ReadOnly _ratioCombo As Aqua.DropDownList
     Private ReadOnly _canvas As CollageCanvas
-    Private ReadOnly _exportButton As Aqua.FlashButton
+    Private ReadOnly _exportButton As PillButton
     Private ReadOnly _stylePanel As StylePanel
     Private ReadOnly _textPanel As TextPanel
     Private ReadOnly _tabs As Aqua.TabControl
@@ -61,8 +61,8 @@ Public Class MontageEditorControl
     Private ReadOnly _mosaicTab As Aqua.TabPage
     Private ReadOnly _mosaicPanel As MosaicPanel
     Private ReadOnly _modeButtons As SegmentedChoice
-    Private ReadOnly _undoButton As Aqua.FlashButton
-    Private ReadOnly _redoButton As Aqua.FlashButton
+    Private ReadOnly _undoButton As PillButton
+    Private ReadOnly _redoButton As PillButton
     Private ReadOnly _toolTip As New ToolTip()
     Private ReadOnly _progressPanel As Panel
     Private ReadOnly _progressBar As Aqua.ProgressBar
@@ -82,18 +82,20 @@ Public Class MontageEditorControl
         AddHandler _strip.ItemActivated, AddressOf OnStripItemActivated
         AddHandler _layoutTimer.Tick, AddressOf OnLayoutTimerTick
 
-        Dim addPhotosButton As New Aqua.FlashButton() With {.Text = "加入照片…", .Dock = DockStyle.Top}
+        Dim addPhotosButton As New PillButton() With {.Text = "加入照片…", .Dock = DockStyle.Top}
         AddHandler addPhotosButton.Click, AddressOf OnAddPhotosClick
-        Dim addFolderButton As New Aqua.FlashButton() With {.Text = "加入資料夾…", .Dock = DockStyle.Top}
+        Dim addFolderButton As New PillButton() With {.Text = "加入資料夾…", .Dock = DockStyle.Top}
         AddHandler addFolderButton.Click, AddressOf OnAddFolderClick
 
         _progressBar = New Aqua.ProgressBar() With {.Dock = DockStyle.Top}
         _progressLabel = New Label() With {.Dock = DockStyle.Fill, .TextAlign = ContentAlignment.MiddleLeft}
-        Dim cancel As New Aqua.FlashButton() With {.Text = "取消", .Dock = DockStyle.Right, .Width = 60}
+        Dim cancel As New PillButton() With {.Text = "取消", .Width = 60, .Height = 24}
         AddHandler cancel.Click, Sub(s, e) CancelImport()
         Dim progressRow As New Panel() With {.Dock = DockStyle.Fill}
         progressRow.Controls.Add(_progressLabel)
-        progressRow.Controls.Add(cancel)
+        Dim cancelHost = PillButton.Docked(cancel, DockStyle.Right, spacing:=2)
+        cancelHost.Width = cancel.Width
+        progressRow.Controls.Add(cancelHost)
         _progressPanel = New Panel() With {.Dock = DockStyle.Bottom, .Height = 48, .Visible = False}
         _progressPanel.Controls.Add(progressRow)
         _progressPanel.Controls.Add(_progressBar)
@@ -103,8 +105,8 @@ Public Class MontageEditorControl
 
         Dim left As New Panel() With {.Dock = DockStyle.Left, .Width = 240, .Padding = New Padding(6)}
         left.Controls.Add(_strip)
-        left.Controls.Add(addFolderButton)
-        left.Controls.Add(addPhotosButton)
+        left.Controls.Add(PillButton.Docked(addFolderButton, DockStyle.Top))
+        left.Controls.Add(PillButton.Docked(addPhotosButton, DockStyle.Top))
         left.Controls.Add(_failureLink)
         left.Controls.Add(_progressPanel)
 
@@ -122,7 +124,7 @@ Public Class MontageEditorControl
         Next
         AddHandler _templateList.SelectedChanged, AddressOf OnTemplateChanged
 
-        Dim autoAssign As New Aqua.FlashButton() With {.Text = "重新自動分配", .Dock = DockStyle.Bottom}
+        Dim autoAssign As New PillButton() With {.Text = "重新自動分配", .Dock = DockStyle.Bottom}
         AddHandler autoAssign.Click, Sub(s, e)
                                          RecordUndo()
                                          ApplyLayout(reassign:=True)
@@ -141,7 +143,7 @@ Public Class MontageEditorControl
                                               End Sub
         AddHandler _canvas.FilesDropped, Sub(s, e) AddPhotos(e.Paths)
 
-        _exportButton = New Aqua.FlashButton() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Enabled = False}
+        _exportButton = New PillButton() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Enabled = False}
         AddHandler _exportButton.Click, Sub(s, e) ShowExportDialog()
 
         ' 「版面」頁
@@ -154,7 +156,7 @@ Public Class MontageEditorControl
         layoutTab.Controls.Add(templateLabel)
         layoutTab.Controls.Add(_ratioCombo)
         layoutTab.Controls.Add(ratioLabel)
-        layoutTab.Controls.Add(autoAssign)
+        layoutTab.Controls.Add(PillButton.Docked(autoAssign, DockStyle.Bottom))
 
         ' 「樣式」頁
         _stylePanel = New StylePanel() With {.Dock = DockStyle.Fill}
@@ -194,16 +196,16 @@ Public Class MontageEditorControl
 
         Dim right As New Panel() With {.Dock = DockStyle.Right, .Width = 250, .Padding = New Padding(4)}
         right.Controls.Add(_tabs)
-        right.Controls.Add(_exportButton)
+        right.Controls.Add(PillButton.Docked(_exportButton, DockStyle.Bottom, spacing:=4))
 
         ' 工具列
-        _undoButton = New Aqua.FlashButton() With {.Text = "復原", .Width = 70, .Enabled = False}
+        _undoButton = New PillButton() With {.Text = "復原", .Width = 70, .Enabled = False}
         _toolTip.SetToolTip(_undoButton, "復原（Ctrl+Z）")
         AddHandler _undoButton.Click, Sub(s, e) Undo()
-        _redoButton = New Aqua.FlashButton() With {.Text = "重做", .Width = 70, .Enabled = False}
+        _redoButton = New PillButton() With {.Text = "重做", .Width = 70, .Enabled = False}
         _toolTip.SetToolTip(_redoButton, "重做（Ctrl+Y）")
         AddHandler _redoButton.Click, Sub(s, e) Redo()
-        Dim addTextButton As New Aqua.FlashButton() With {.Text = "新增文字", .Width = 84}
+        Dim addTextButton As New PillButton() With {.Text = "新增文字", .Width = 84}
         AddHandler addTextButton.Click, Sub(s, e) AddText()
         _modeButtons = New SegmentedChoice("拼貼", "馬賽克") With {.Width = 160}
         AddHandler _modeButtons.SelectedChanged, Sub(s, e) OnModeChanged()

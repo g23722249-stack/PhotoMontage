@@ -271,7 +271,7 @@ End Class
 ## 8.10 介面改用 Aqua.Net（與 iPhoto 一致）
 
 - 參考 `C:\專案\RunTime\Aqua.Net\Aqua.Net.vbproj`（`Directory.Build.props` 的 `AquaNetProject` 可修改）；`PhotoMontage.sln` 包含 Aqua.Net 供 Visual Studio 建置。
-- 對應：編輯器與匯出視窗 → `AquaForm`；分頁 → `Aqua.TabControl`；版型清單 → `ItemListBox`；比例、解析度 → `DropDownList`；滑桿 → `Aqua.Slider`（原 NumericUpDown 的旋轉、使用次數、自訂長邊也改為滑桿）；對齊、JPEG/PNG、模式 → 分段 `Aqua.Buttons`；核取方塊 → `Aqua.CheckBox`；按鈕 → `FlashButton`；進度條、文字輸入 → `Aqua.ProgressBar`、`Aqua.TextBox`。
+- 對應：編輯器與匯出視窗 → `AquaForm`；分頁 → `Aqua.TabControl`；版型清單 → `ItemListBox`；比例、解析度 → `DropDownList`；滑桿 → `Aqua.Slider`（原 NumericUpDown 的旋轉、使用次數、自訂長邊也改為滑桿）；對齊、JPEG/PNG、模式 → 分段 `Aqua.Buttons`；核取方塊 → `Aqua.CheckBox`；按鈕 → `Aqua.Button`（內建預設膠囊樣式，包成 `PillButton` 固定高度；停駐排列的按鈕以留白容器隔開）；進度條、文字輸入 → `Aqua.ProgressBar`、`Aqua.TextBox`。
 - **例外**：字型清單保留標準下拉選單（Aqua 下拉選單無法捲動，放不下數百種字型）；縮圖清單、畫布為自繪控制項；右鍵選單、訊息方塊沿用標準元件。
 - `MontageOptions.AquaColor` 設定所有 Aqua 控制項的主題色，宿主可傳入自己的設定。
 - LibVLC 原生檔（約 200 MB）由 `Directory.Build.targets` 排除在本方案輸出之外；獨立版約 5 MB。

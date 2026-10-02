@@ -29,11 +29,11 @@ Friend Class ExportDialog
     Private ReadOnly _format As SegmentedChoice
     Private ReadOnly _quality As LabeledSlider
     Private ReadOnly _path As Aqua.TextBox
-    Private ReadOnly _browse As Aqua.FlashButton
+    Private ReadOnly _browse As PillButton
     Private ReadOnly _progress As Aqua.ProgressBar
     Private ReadOnly _status As System.Windows.Forms.Label
-    Private ReadOnly _exportButton As Aqua.FlashButton
-    Private ReadOnly _cancelButton As Aqua.FlashButton
+    Private ReadOnly _exportButton As PillButton
+    Private ReadOnly _cancelButton As PillButton
 
     ''' <summary>匯出成功後的結果；未匯出時為 Nothing。</summary>
     Public Property Result As ExportResult
@@ -78,9 +78,9 @@ Friend Class ExportDialog
         AddRow(layout, "JPEG 品質", _quality)
 
         _path = New Aqua.TextBox() With {.Dock = DockStyle.Fill}
-        _browse = New Aqua.FlashButton() With {.Text = "瀏覽…", .Width = 70, .Dock = DockStyle.Right}
+        _browse = New PillButton() With {.Text = "瀏覽…", .Width = 70, .Dock = DockStyle.Right}
         AddHandler _browse.Click, AddressOf OnBrowse
-        Dim pathRow As New System.Windows.Forms.Panel() With {.Dock = DockStyle.Fill, .Height = Math.Max(26, _browse.Height), .BackColor = Color.Transparent}
+        Dim pathRow As New System.Windows.Forms.Panel() With {.Dock = DockStyle.Fill, .Height = PillButton.DefaultHeight, .BackColor = Color.Transparent}
         pathRow.Controls.Add(_path)
         pathRow.Controls.Add(New System.Windows.Forms.Panel() With {.Dock = DockStyle.Right, .Width = 6, .BackColor = Color.Transparent})
         pathRow.Controls.Add(_browse)
@@ -91,9 +91,9 @@ Friend Class ExportDialog
         AddRow(layout, "", _progress)
         AddRow(layout, "", _status)
 
-        _exportButton = New Aqua.FlashButton() With {.Text = "匯出", .Width = 90}
+        _exportButton = New PillButton() With {.Text = "匯出", .Width = 90}
         AddHandler _exportButton.Click, AddressOf OnExportClick
-        _cancelButton = New Aqua.FlashButton() With {.Text = "取消", .Width = 90}
+        _cancelButton = New PillButton() With {.Text = "取消", .Width = 90}
         AddHandler _cancelButton.Click, AddressOf OnCancelClick
         Dim buttons As New FlowLayoutPanel() With {.Dock = DockStyle.Bottom, .FlowDirection = FlowDirection.RightToLeft, .AutoSize = True, .BackColor = Color.Transparent}
         buttons.Controls.Add(_cancelButton)
