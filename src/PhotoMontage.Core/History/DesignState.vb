@@ -18,6 +18,28 @@ Public NotInheritable Class DesignState
     Public Property Cells As New List(Of CellState)
     Public Property Texts As New List(Of TextState)
     Public Property Mosaic As New MosaicState
+    Public Property Free As New FreeState
+
+    Public NotInheritable Class FreeState
+        Public Property Looseness As Single = 0.5F
+        Public Property Items As New List(Of FreeItemState)
+    End Class
+
+    Public NotInheritable Class FreeItemState
+        Public Property Id As String
+        Public Property PhotoId As String
+        Public Property CenterX As Single
+        Public Property CenterY As Single
+        Public Property Width As Single
+        Public Property InnerAspect As Single
+        Public Property Rotation As Single
+        Public Property Frame As Integer
+        Public Property FrameWidth As Single
+        Public Property Shadow As Boolean
+        Public Property OffsetX As Single
+        Public Property OffsetY As Single
+        Public Property Scale As Single
+    End Class
 
     ''' <summary>馬賽克設定；格子結果以「素材 Id 表＋索引」儲存，避免每格重複完整 Id。</summary>
     Public NotInheritable Class MosaicState
@@ -87,6 +109,12 @@ Public NotInheritable Class DesignState
                 .TargetPath = m.TargetPath, .Columns = m.Columns, .Rows = m.Rows, .Tint = m.Tint,
                 .MaxRepeat = m.MaxRepeat, .AvoidAdjacent = m.AvoidAdjacentDuplicates,
                 .TileIds = ids, .TileIndexes = indexes},
+            .Free = New FreeState With {
+                .Looseness = project.Free.Looseness,
+                .Items = project.Free.Items.Select(Function(i) New FreeItemState With {
+                    .Id = i.Id, .PhotoId = i.PhotoId, .CenterX = i.CenterX, .CenterY = i.CenterY, .Width = i.Width,
+                    .InnerAspect = i.InnerAspect, .Rotation = i.Rotation, .Frame = CInt(i.Frame), .FrameWidth = i.FrameWidth,
+                    .Shadow = i.Shadow, .OffsetX = i.Crop.OffsetX, .OffsetY = i.Crop.OffsetY, .Scale = i.Crop.Scale}).ToList()},
             .CanvasWidth = project.CanvasSize.Width,
             .CanvasHeight = project.CanvasSize.Height,
             .BackgroundArgb = project.BackgroundColor.ToArgb(),
@@ -110,6 +138,14 @@ Public NotInheritable Class DesignState
     ''' <summary>把快照套回專案（照片清單不變）。</summary>
     Public Sub ApplyTo(project As MontageProject)
         project.Mode = CType(Mode, MontageMode)
+        Dim fs = If(Free, New FreeState())
+        project.Free = New FreeLayoutSettings With {
+            .Looseness = fs.Looseness,
+            .Items = fs.Items.Select(Function(i) New FreeItem With {
+                .Id = i.Id, .PhotoId = i.PhotoId, .CenterX = i.CenterX, .CenterY = i.CenterY, .Width = i.Width,
+                .InnerAspect = If(i.InnerAspect > 0, i.InnerAspect, 1.5F), .Rotation = i.Rotation, .Frame = CType(i.Frame, FrameStyle),
+                .FrameWidth = i.FrameWidth, .Shadow = i.Shadow,
+                .Crop = New CropInfo With {.OffsetX = i.OffsetX, .OffsetY = i.OffsetY, .Scale = If(i.Scale > 0, i.Scale, 1.0F)}}).ToList()}
         Dim ms = If(Mosaic, New MosaicState())
         project.Mosaic = New MosaicSettings With {
             .TargetPath = ms.TargetPath,

@@ -10,6 +10,9 @@ Public Class ImportLimits
 
     Public Property MaxMosaicPhotos As Integer = 2000
 
+    ''' <summary>自由拼貼畫布上的照片數上限（照片清單本身沿用拼貼的上限）。</summary>
+    Public Property MaxFreeItems As Integer = 30
+
     Public Function MaxPhotosFor(mode As MontageMode) As Integer
         Return If(mode = MontageMode.Mosaic, MaxMosaicPhotos, MaxCollagePhotos)
     End Function

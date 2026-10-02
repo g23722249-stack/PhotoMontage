@@ -38,21 +38,9 @@ Public Module CollageRenderer
             g.PixelOffsetMode = If(options.HighQuality, PixelOffsetMode.HighQuality, PixelOffsetMode.Half)
             g.InterpolationMode = If(options.HighQuality, InterpolationMode.HighQualityBicubic, InterpolationMode.Bilinear)
 
-            Using back As New SolidBrush(project.BackgroundColor)
-                g.FillRectangle(back, bounds)
-            End Using
-
             Using attrs As New ImageAttributes()
                 attrs.SetWrapMode(WrapMode.TileFlipXY) ' 避免縮放時邊緣出現半透明線
-
-                If options.BackgroundImage IsNot Nothing Then
-                    Dim image = options.BackgroundImage
-                    Dim src = CropMath.GetSourceRect(New SizeF(image.Width, image.Height), bounds.Size, New CropInfo())
-                    Dim stateBg = g.Save()
-                    g.SetClip(bounds)
-                    g.DrawImage(image, Rectangle.Round(bounds), src.X, src.Y, src.Width, src.Height, GraphicsUnit.Pixel, attrs)
-                    g.Restore(stateBg)
-                End If
+                DrawBackground(g, project, bounds, options, attrs)
 
                 Dim rects = CellGeometry.GetCellRects(project.Collage, bounds)
                 For i = 0 To rects.Count - 1
@@ -60,17 +48,34 @@ Public Module CollageRenderer
                 Next
             End Using
 
-            If options.DrawTexts Then
-                Dim stateText = g.Save()
-                g.SetClip(bounds)
-                For Each layer In project.Texts
-                    TextLayerRenderer.Draw(g, layer, bounds)
-                Next
-                g.Restore(stateText)
-            End If
+            If options.DrawTexts Then DrawTexts(g, project, bounds)
         Finally
             g.Restore(state)
         End Try
+    End Sub
+
+    ''' <summary>背景色＋背景圖（cover 鋪滿畫布）。</summary>
+    Friend Sub DrawBackground(g As Graphics, project As MontageProject, bounds As RectangleF, options As RenderOptions, attrs As ImageAttributes)
+        Using back As New SolidBrush(project.BackgroundColor)
+            g.FillRectangle(back, bounds)
+        End Using
+        If options.BackgroundImage Is Nothing Then Return
+        Dim image = options.BackgroundImage
+        Dim src = CropMath.GetSourceRect(New SizeF(image.Width, image.Height), bounds.Size, New CropInfo())
+        Dim state = g.Save()
+        g.SetClip(bounds)
+        g.DrawImage(image, Rectangle.Round(bounds), src.X, src.Y, src.Width, src.Height, GraphicsUnit.Pixel, attrs)
+        g.Restore(state)
+    End Sub
+
+    ''' <summary>所有文字圖層（裁切在畫布內）。</summary>
+    Friend Sub DrawTexts(g As Graphics, project As MontageProject, bounds As RectangleF)
+        Dim state = g.Save()
+        g.SetClip(bounds)
+        For Each layer In project.Texts
+            TextLayerRenderer.Draw(g, layer, bounds)
+        Next
+        g.Restore(state)
     End Sub
 
     ''' <summary>格子的外框路徑（含圓角）。呼叫端負責 Dispose。</summary>

@@ -62,7 +62,10 @@ Public Class CollageExporter
 
         Dim bounds As New RectangleF(0, 0, size.Width, size.Height)
         Dim edges = PlanDecodeEdges(snapshot, bounds)
-        Dim total = snapshot.Collage.Cells.Where(Function(c) snapshot.FindPhoto(c.PhotoId) IsNot Nothing).Count() + 1
+        Dim free = snapshot.Mode = MontageMode.Free
+        Dim total = If(free,
+                       snapshot.Free.Items.Where(Function(i) snapshot.FindPhoto(i.PhotoId) IsNot Nothing).Count(),
+                       snapshot.Collage.Cells.Where(Function(c) snapshot.FindPhoto(c.PhotoId) IsNot Nothing).Count()) + 1
         Dim completed = 0
         Dim warnings As New List(Of String)
         progress?.Report(New ExportProgress(0, total, "準備中…"))
@@ -84,13 +87,18 @@ Public Class CollageExporter
                                             completed += 1
                                             progress?.Report(New ExportProgress(completed, total, asset.FileName))
                                         End Sub}
-                    CollageRenderer.Render(g, snapshot, bounds,
+                    Dim getImage As Func(Of PhotoAsset, Image) =
                         Function(asset)
                             cancellationToken.ThrowIfCancellationRequested()
                             Dim edge = 0
                             edges.TryGetValue(asset.Id, edge)
                             Return LoadPhoto(asset, edge, warnings)
-                        End Function, options)
+                        End Function
+                    If free Then
+                        FreeRenderer.Render(g, snapshot, bounds, getImage, options)
+                    Else
+                        CollageRenderer.Render(g, snapshot, bounds, getImage, options)
+                    End If
                 End Using
 
                 cancellationToken.ThrowIfCancellationRequested()
@@ -108,6 +116,18 @@ Public Class CollageExporter
     ''' <summary>每張照片需要解碼的長邊（同一張照片放在多格時取最大）。</summary>
     Friend Shared Function PlanDecodeEdges(project As MontageProject, bounds As RectangleF) As Dictionary(Of String, Integer)
         Dim edges As New Dictionary(Of String, Integer)
+        If project.Mode = MontageMode.Free Then
+            For Each item In project.Free.Items
+                Dim photo = project.FindPhoto(item.PhotoId)
+                If photo Is Nothing Then Continue For
+                Dim outer = FreeGeometry.GetOuterSize(item, bounds.Size)
+                Dim inner = FreeGeometry.GetInnerRect(item, outer)
+                Dim needed = ExportPlanner.RequiredDecodeEdge(photo.PixelSize, inner.Size, item.Crop)
+                Dim existing = 0
+                If Not edges.TryGetValue(photo.Id, existing) OrElse needed > existing Then edges(photo.Id) = needed
+            Next
+            Return edges
+        End If
         Dim rects = CellGeometry.GetCellRects(project.Collage, bounds)
         For i = 0 To rects.Count - 1
             Dim cell = project.Collage.Cells(i)

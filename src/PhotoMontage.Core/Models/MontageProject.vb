@@ -18,6 +18,8 @@ Public Class MontageProject
 
     Public Property Mosaic As New MosaicSettings
 
+    Public Property Free As New FreeLayoutSettings
+
     Public Property Texts As New List(Of TextLayer)
 
     ''' <summary>畫布長寬比（寬 / 高）。</summary>
