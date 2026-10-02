@@ -9,6 +9,9 @@ Public Class MontageProject
 
     Public Property BackgroundColor As Color = Color.White
 
+    ''' <summary>背景圖完整路徑（以 cover 方式鋪滿畫布）；Nothing 表示只用背景色。</summary>
+    Public Property BackgroundImagePath As String
+
     Public Property Photos As New List(Of PhotoAsset)
 
     Public Property Collage As New CollageSettings

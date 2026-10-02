@@ -9,6 +9,11 @@ Public Class RenderOptions
 
     ''' <summary>空格子的填色；Nothing 表示不畫（匯出時空格只露出背景）。</summary>
     Public Property EmptyCellColor As Color?
+
+    ''' <summary>背景圖（已轉正），以 cover 方式鋪滿畫布；Nothing 表示只用背景色。影像由呼叫端擁有。</summary>
+    Public Property BackgroundImage As Image
+
+    Public Property DrawTexts As Boolean = True
 End Class
 
 ''' <summary>
@@ -32,13 +37,32 @@ Public Module CollageRenderer
                 g.FillRectangle(back, bounds)
             End Using
 
-            Dim rects = CellGeometry.GetCellRects(project.Collage, bounds)
             Using attrs As New ImageAttributes()
                 attrs.SetWrapMode(WrapMode.TileFlipXY) ' 避免縮放時邊緣出現半透明線
+
+                If options.BackgroundImage IsNot Nothing Then
+                    Dim image = options.BackgroundImage
+                    Dim src = CropMath.GetSourceRect(New SizeF(image.Width, image.Height), bounds.Size, New CropInfo())
+                    Dim stateBg = g.Save()
+                    g.SetClip(bounds)
+                    g.DrawImage(image, Rectangle.Round(bounds), src.X, src.Y, src.Width, src.Height, GraphicsUnit.Pixel, attrs)
+                    g.Restore(stateBg)
+                End If
+
+                Dim rects = CellGeometry.GetCellRects(project.Collage, bounds)
                 For i = 0 To rects.Count - 1
                     DrawCell(g, project, project.Collage.Cells(i), rects(i), getImage, options, attrs)
                 Next
             End Using
+
+            If options.DrawTexts Then
+                Dim stateText = g.Save()
+                g.SetClip(bounds)
+                For Each layer In project.Texts
+                    TextLayerRenderer.Draw(g, layer, bounds)
+                Next
+                g.Restore(stateText)
+            End If
         Finally
             g.Restore(state)
         End Try

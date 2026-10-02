@@ -109,6 +109,30 @@ Public Class PhotoImporter
         Return thumbnail
     End Function
 
+    ''' <summary>
+    ''' 直接解碼任意圖檔到長邊不超過 <paramref name="maxEdge"/>（已轉正），不經過快取。用於背景圖等單張影像。
+    ''' </summary>
+    ''' <exception cref="IOException">讀檔失敗。</exception>
+    ''' <exception cref="ImageDecodeException">格式不支援或檔案損壞。</exception>
+    Public Function DecodeFile(path As String, maxEdge As Integer) As DecodedImage
+        Using ms As New MemoryStream(ReadShared(path), writable:=False)
+            If ImageFormatSniffer.Detect(ms) = ImageFileFormat.Unknown Then Throw New ImageDecodeException("不支援的檔案格式。", False)
+            Dim info = _codec.ReadInfo(ms)
+            If info.PixelCount > _limits.MaxPixels Then Throw New ImageDecodeException("照片解析度過高。", False)
+            ms.Position = 0
+            Return ExifOrientations.Apply(_codec.DecodeThumbnail(ms, maxEdge), info.Orientation)
+        End Using
+    End Function
+
+    ''' <summary>一次讀完並立即關檔，不鎖住原圖（宿主可能同時要搬移或刪除）。</summary>
+    Private Shared Function ReadShared(path As String) As Byte()
+        Using fs As New FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite Or FileShare.Delete)
+            Dim data = New Byte(CInt(fs.Length) - 1) {}
+            fs.ReadExactly(data)
+            Return data
+        End Using
+    End Function
+
     ''' <summary>處理單張照片。成功回傳 Nothing 並設定 <paramref name="thumbnail"/>。</summary>
     Friend Function ProcessOne(asset As PhotoAsset, ByRef thumbnail As DecodedImage, cancellationToken As CancellationToken) As ImportFailure
         cancellationToken.ThrowIfCancellationRequested()
@@ -149,14 +173,7 @@ Public Class PhotoImporter
     End Function
 
     Private Function Decode(asset As PhotoAsset, ByRef failure As ImportFailure, cancellationToken As CancellationToken) As CachedThumbnail
-        ' 一次讀完並立即關檔，不鎖住原圖（宿主可能同時要搬移或刪除）
-        Dim data As Byte()
-        Using fs As New FileStream(asset.FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite Or FileShare.Delete)
-            data = New Byte(CInt(fs.Length) - 1) {}
-            fs.ReadExactly(data)
-        End Using
-
-        Using ms As New MemoryStream(data, writable:=False)
+        Using ms As New MemoryStream(ReadShared(asset.FilePath), writable:=False)
             Dim format = ImageFormatSniffer.Detect(ms)
             If format = ImageFileFormat.Unknown Then
                 failure = Fail(asset, ImportFailureReason.Unsupported)

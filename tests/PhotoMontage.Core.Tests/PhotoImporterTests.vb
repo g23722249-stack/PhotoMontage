@@ -253,3 +253,36 @@ Public Class PhotoImporterTests
     End Class
 
 End Class
+
+<TestClass>
+Public Class DecodeFileTests
+
+    <TestMethod>
+    Public Sub DecodeFile_ReturnsOrientedImageWithinMaxEdge()
+        Using dir As New TempFolder()
+            Dim codec As New FakeCodec()
+            Dim importer As New PhotoImporter(codec, New ThumbnailCache(codec, Nothing))
+            Dim path = dir.Combine("bg.jpg")
+            FakeCodec.WriteFile(path, 4000, 3000, ExifOrientation.Rotate90)
+
+            Dim img = importer.DecodeFile(path, 1000)
+
+            Assert.AreEqual(750, img.Width)
+            Assert.AreEqual(1000, img.Height)
+        End Using
+    End Sub
+
+    <TestMethod>
+    Public Sub DecodeFile_RejectsNonImage()
+        Using dir As New TempFolder()
+            Dim codec As New FakeCodec()
+            Dim importer As New PhotoImporter(codec, New ThumbnailCache(codec, Nothing))
+            Dim path = dir.Combine("fake.jpg")
+            IO.File.WriteAllText(path, "text")
+
+            Assert.ThrowsException(Of ImageDecodeException)(Function() importer.DecodeFile(path, 100))
+            Assert.ThrowsException(Of IO.FileNotFoundException)(Function() importer.DecodeFile(dir.Combine("missing.jpg"), 100))
+        End Using
+    End Sub
+
+End Class

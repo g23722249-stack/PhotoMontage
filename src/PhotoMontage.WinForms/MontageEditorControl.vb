@@ -6,7 +6,7 @@ Imports PhotoMontage.Core
 ''' <summary>
 ''' 蒙太奇編輯器本體。可放進宿主自己的視窗，或由 <see cref="MontageEditor.ShowDialog"/> 以對話框開啟。
 ''' </summary>
-''' <remarks>M2：照片匯入、版型畫布、自動分配、換位與取景；樣式與匯出於 M3/M4 實作。所有公開成員都必須在 UI 執行緒呼叫。</remarks>
+''' <remarks>M3：照片匯入、版型畫布、樣式、文字圖層、復原重做；匯出於 M4 實作。所有公開成員都必須在 UI 執行緒呼叫。</remarks>
 Public Class MontageEditorControl
     Inherits UserControl
 
@@ -23,12 +23,24 @@ Public Class MontageEditorControl
     ''' <summary>照片清單變動後延遲更新版面，避免大量匯入時每張都重排。</summary>
     Private ReadOnly _layoutTimer As New System.Windows.Forms.Timer() With {.Interval = 250}
     Private _suppressTemplateEvents As Boolean
+    Private ReadOnly _history As New UndoHistory()
+
+    ''' <summary>背景圖的預覽影像（長邊 1600 px），以及它對應的路徑。</summary>
+    Private _backgroundPath As String
+    Private _backgroundImage As Bitmap
+    Private Const BackgroundPreviewEdge As Integer = 1600
 
     Private ReadOnly _strip As PhotoStrip
     Private ReadOnly _templateList As ListBox
     Private ReadOnly _ratioCombo As ComboBox
     Private ReadOnly _canvas As CollageCanvas
     Private ReadOnly _exportButton As Button
+    Private ReadOnly _stylePanel As StylePanel
+    Private ReadOnly _textPanel As TextPanel
+    Private ReadOnly _tabs As TabControl
+    Private ReadOnly _textTab As TabPage
+    Private ReadOnly _undoButton As ToolStripButton
+    Private ReadOnly _redoButton As ToolStripButton
     Private ReadOnly _progressPanel As Panel
     Private ReadOnly _progressBar As ProgressBar
     Private ReadOnly _progressLabel As Label
@@ -87,27 +99,75 @@ Public Class MontageEditorControl
         AddHandler _templateList.SelectedIndexChanged, AddressOf OnTemplateChanged
 
         Dim autoAssign As New Button() With {.Text = "重新自動分配", .Dock = DockStyle.Bottom, .Height = 32}
-        AddHandler autoAssign.Click, Sub(s, e) ApplyLayout(reassign:=True)
+        AddHandler autoAssign.Click, Sub(s, e)
+                                         RecordUndo()
+                                         ApplyLayout(reassign:=True)
+                                     End Sub
 
-        _canvas = New CollageCanvas() With {.Dock = DockStyle.Fill, .Project = _project, .ImageProvider = AddressOf GetPreviewImage}
+        _canvas = New CollageCanvas() With {
+            .Dock = DockStyle.Fill, .Project = _project,
+            .ImageProvider = AddressOf GetPreviewImage, .BackgroundImageProvider = AddressOf GetBackgroundImage}
+        AddHandler _canvas.ChangeStarting, Sub(s, e) RecordUndo(e.Key)
         AddHandler _canvas.CellsChanged, Sub(s, e) OnCanvasCellsChanged()
+        AddHandler _canvas.TextsChanged, Sub(s, e) OnCanvasTextsChanged()
+        AddHandler _canvas.TextSelectionChanged, Sub(s, e) OnTextSelectionChanged()
+        AddHandler _canvas.TextEditRequested, Sub(s, e)
+                                                  _tabs.SelectedTab = _textTab
+                                                  _textPanel.FocusText()
+                                              End Sub
         AddHandler _canvas.FilesDropped, Sub(s, e) AddPhotos(e.Paths)
 
         _exportButton = New Button() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Height = 32, .Enabled = False}
 
+        ' 「版面」頁
         Dim ratioLabel As New Label() With {.Text = "畫布比例", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 0, 0, 2)}
         Dim templateLabel As New Label() With {.Text = "版型", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 8, 0, 2)}
-        Dim right As New Panel() With {.Dock = DockStyle.Right, .Width = 220, .Padding = New Padding(6)}
-        right.Controls.Add(_templateList)
-        right.Controls.Add(templateLabel)
-        right.Controls.Add(_ratioCombo)
-        right.Controls.Add(ratioLabel)
-        right.Controls.Add(autoAssign)
+        Dim layoutTab As New TabPage("版面") With {.Padding = New Padding(6)}
+        layoutTab.Controls.Add(_templateList)
+        layoutTab.Controls.Add(templateLabel)
+        layoutTab.Controls.Add(_ratioCombo)
+        layoutTab.Controls.Add(ratioLabel)
+        layoutTab.Controls.Add(autoAssign)
+
+        ' 「樣式」頁
+        _stylePanel = New StylePanel() With {.Dock = DockStyle.Fill}
+        AddHandler _stylePanel.ChangeStarting, Sub(s, e) RecordUndo(e.Key)
+        AddHandler _stylePanel.DesignChanged, Sub(s, e) _canvas.Invalidate()
+        AddHandler _stylePanel.BackgroundImageRequested, Sub(s, e) SetBackgroundImage(e.Paths(0))
+        Dim styleTab As New TabPage("樣式")
+        styleTab.Controls.Add(_stylePanel)
+
+        ' 「文字」頁
+        _textPanel = New TextPanel() With {.Dock = DockStyle.Fill}
+        AddHandler _textPanel.ChangeStarting, Sub(s, e) RecordUndo(e.Key)
+        AddHandler _textPanel.TextChangedByUser, Sub(s, e) _canvas.Invalidate()
+        AddHandler _textPanel.AddRequested, Sub(s, e) AddText()
+        AddHandler _textPanel.DeleteRequested, Sub(s, e) DeleteSelectedText()
+        _textTab = New TabPage("文字")
+        _textTab.Controls.Add(_textPanel)
+
+        _tabs = New TabControl() With {.Dock = DockStyle.Fill}
+        _tabs.TabPages.AddRange({layoutTab, styleTab, _textTab})
+
+        Dim right As New Panel() With {.Dock = DockStyle.Right, .Width = 250, .Padding = New Padding(4)}
+        right.Controls.Add(_tabs)
         right.Controls.Add(_exportButton)
+
+        ' 工具列
+        _undoButton = New ToolStripButton("復原") With {.Enabled = False, .ToolTipText = "復原（Ctrl+Z）"}
+        AddHandler _undoButton.Click, Sub(s, e) Undo()
+        _redoButton = New ToolStripButton("重做") With {.Enabled = False, .ToolTipText = "重做（Ctrl+Y）"}
+        AddHandler _redoButton.Click, Sub(s, e) Redo()
+        Dim addTextButton As New ToolStripButton("新增文字")
+        AddHandler addTextButton.Click, Sub(s, e) AddText()
+        Dim toolbar As New ToolStrip() With {.GripStyle = ToolStripGripStyle.Hidden, .Dock = DockStyle.Top}
+        toolbar.Items.AddRange({_undoButton, _redoButton, New ToolStripSeparator(), addTextButton})
+        AddHandler _history.Changed, Sub(s, e) UpdateUndoButtons()
 
         Controls.Add(_canvas)
         Controls.Add(right)
         Controls.Add(left)
+        Controls.Add(toolbar)
     End Sub
 
     ''' <summary>目前編輯中的專案。</summary>
@@ -133,7 +193,9 @@ Public Class MontageEditorControl
         _templateList.SelectedItem = _templateList.Items.Cast(Of CollageTemplate)().
             FirstOrDefault(Function(t) t.Id = _project.Collage.TemplateId)
         _suppressTemplateEvents = False
+        _stylePanel.Bind(_project)
         ApplyLayout(reassign:=True)
+        _history.Clear()
     End Sub
 
     ''' <summary>
@@ -335,6 +397,7 @@ Public Class MontageEditorControl
         Dim template = TryCast(_templateList.SelectedItem, CollageTemplate)
         If template Is Nothing Then Return
 
+        RecordUndo()
         _project.Collage.TemplateId = template.Id
         ApplyLayout(reassign:=True)
         _canvas.ResetInteraction()
@@ -345,6 +408,7 @@ Public Class MontageEditorControl
         Dim preset = TryCast(_ratioCombo.SelectedItem, CanvasPreset)
         If preset Is Nothing Then Return
 
+        RecordUndo()
         _project.CanvasSize = preset.SizeFor(CanvasPresets.DefaultLongEdge)
         ' 格子形狀改變：自動排版重排；固定版型保留位置，只重設取景
         If IsAutoLayout Then
@@ -368,21 +432,28 @@ Public Class MontageEditorControl
     ''' 所以把新的位置順序寫回照片清單，再依新順序重排。
     ''' </summary>
     Private Sub OnCanvasCellsChanged()
-        If IsAutoLayout Then
-            Dim cellOrder = _project.Collage.Cells.Select(Function(c) c.PhotoId).ToList()
-            Dim readyOrder = _project.Photos.Where(Function(p) p.Status = PhotoStatus.Ready).Select(Function(p) p.Id).ToList()
-            If Not cellOrder.SequenceEqual(readyOrder) Then
-                Dim byId = _project.Photos.ToDictionary(Function(p) p.Id)
-                Dim placed = cellOrder.Where(Function(id) id IsNot Nothing AndAlso byId.ContainsKey(id)).Select(Function(id) byId(id)).ToList()
-                _strip.SetOrder(placed)
-                _project.Photos.Clear()
-                _project.Photos.AddRange(_strip.Assets)
-                ApplyLayout(reassign:=True)
-                Return
-            End If
+        If IsAutoLayout AndAlso SyncPhotoOrderFromCells() Then
+            ApplyLayout(reassign:=True)
+        Else
+            OnCellsChanged()
         End If
-        OnCellsChanged()
     End Sub
+
+    ''' <summary>
+    ''' 自動排版時，把格子的照片順序寫回照片清單（換位、復原都會改變格子順序）。有改變時回傳 True。
+    ''' </summary>
+    Private Function SyncPhotoOrderFromCells() As Boolean
+        Dim cellOrder = _project.Collage.Cells.Select(Function(c) c.PhotoId).ToList()
+        Dim readyOrder = _project.Photos.Where(Function(p) p.Status = PhotoStatus.Ready).Select(Function(p) p.Id).ToList()
+        If cellOrder.SequenceEqual(readyOrder) Then Return False
+
+        Dim byId = _project.Photos.ToDictionary(Function(p) p.Id)
+        Dim placed = cellOrder.Where(Function(id) id IsNot Nothing AndAlso byId.ContainsKey(id)).Select(Function(id) byId(id)).ToList()
+        _strip.SetOrder(placed)
+        _project.Photos.Clear()
+        _project.Photos.AddRange(_strip.Assets)
+        Return True
+    End Function
 
     Private Sub OnLayoutTimerTick(sender As Object, e As EventArgs)
         _layoutTimer.Stop()
@@ -449,6 +520,155 @@ Public Class MontageEditorControl
 
 #End Region
 
+#Region "復原／重做"
+
+    Private Sub RecordUndo(Optional key As String = Nothing)
+        _history.Record(_project, key)
+    End Sub
+
+    Public Sub Undo()
+        If _history.Undo(_project) Then AfterHistoryRestore()
+    End Sub
+
+    Public Sub Redo()
+        If _history.Redo(_project) Then AfterHistoryRestore()
+    End Sub
+
+    Private Sub UpdateUndoButtons()
+        _undoButton.Enabled = _history.CanUndo
+        _redoButton.Enabled = _history.CanRedo
+    End Sub
+
+    ''' <summary>復原／重做套用快照後，把畫面同步回專案狀態。</summary>
+    Private Sub AfterHistoryRestore()
+        _suppressTemplateEvents = True
+        _ratioCombo.SelectedItem = If(CanvasPresets.Find(_project.CanvasSize), _ratioCombo.SelectedItem)
+        _templateList.SelectedItem = _templateList.Items.Cast(Of CollageTemplate)().
+            FirstOrDefault(Function(t) t.Id = _project.Collage.TemplateId)
+        _suppressTemplateEvents = False
+
+        If IsAutoLayout Then
+            ' 先依快照中的格子順序調整照片順序，再依目前的照片重建格子（快照中的取景會被保留）
+            SyncPhotoOrderFromCells()
+            ApplyLayout(reassign:=True)
+        Else
+            _canvas.AllowClear = True
+            _canvas.ClampInteraction()
+            OnCellsChanged()
+        End If
+        _stylePanel.RefreshFromProject()
+        OnTextSelectionChanged()
+    End Sub
+
+    ''' <summary>Ctrl+Z／Ctrl+Y；輸入框有焦點時交給輸入框自己的復原。</summary>
+    Protected Overrides Function ProcessCmdKey(ByRef msg As Message, keyData As Keys) As Boolean
+        If TypeOf FocusedControl() IsNot TextBoxBase Then
+            Select Case keyData
+                Case Keys.Control Or Keys.Z
+                    Undo()
+                    Return True
+                Case Keys.Control Or Keys.Y, Keys.Control Or Keys.Shift Or Keys.Z
+                    Redo()
+                    Return True
+            End Select
+        End If
+        Return MyBase.ProcessCmdKey(msg, keyData)
+    End Function
+
+    Private Function FocusedControl() As Control
+        Dim c As Control = Me
+        Do
+            Dim container = TryCast(c, ContainerControl)
+            If container Is Nothing OrElse container.ActiveControl Is Nothing Then Return c
+            c = container.ActiveControl
+        Loop
+    End Function
+
+#End Region
+
+#Region "文字"
+
+    Private Sub AddText()
+        RecordUndo()
+        Dim offset = (_project.Texts.Count Mod 5) * 0.08F
+        Dim layer As New TextLayer With {
+            .Text = "輸入文字",
+            .FontSize = 0.08F,
+            .Bold = True,
+            .OutlineWidth = 0.04F,
+            .Position = New PointF(0.5F, Math.Min(0.9F, 0.5F + offset))}
+        _project.Texts.Add(layer)
+        _canvas.SelectedTextId = layer.Id
+        OnTextSelectionChanged()
+        _tabs.SelectedTab = _textTab
+        _textPanel.FocusText()
+    End Sub
+
+    Private Sub DeleteSelectedText()
+        Dim layer = _canvas.SelectedText
+        If layer Is Nothing Then Return
+        RecordUndo()
+        _project.Texts.Remove(layer)
+        _canvas.SelectedTextId = Nothing
+        OnTextSelectionChanged()
+    End Sub
+
+    Private Sub OnTextSelectionChanged()
+        Dim layer = _canvas.SelectedText
+        _textPanel.Bind(layer)
+        If layer IsNot Nothing Then _tabs.SelectedTab = _textTab
+        _canvas.Invalidate()
+    End Sub
+
+    Private Sub OnCanvasTextsChanged()
+        If _canvas.SelectedText Is Nothing Then
+            _textPanel.Bind(Nothing)
+        Else
+            _textPanel.RefreshFromLayer()
+        End If
+    End Sub
+
+#End Region
+
+#Region "背景圖"
+
+    Private Sub SetBackgroundImage(path As String)
+        Dim bmp As Bitmap
+        Try
+            bmp = BitmapConversion.ToBitmap(_importer.DecodeFile(path, BackgroundPreviewEdge))
+        Catch ex As Exception When TypeOf ex Is IO.IOException OrElse TypeOf ex Is UnauthorizedAccessException OrElse TypeOf ex Is ImageDecodeException
+            MessageBox.Show(Me, "無法讀取這張圖片：" & ex.Message, "背景圖", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
+        End Try
+
+        RecordUndo()
+        _backgroundImage?.Dispose()
+        _backgroundImage = bmp
+        _backgroundPath = path
+        _project.BackgroundImagePath = path
+        _stylePanel.RefreshFromProject()
+        _canvas.Invalidate()
+    End Sub
+
+    ''' <summary>畫布要用的背景圖；路徑改變（例如復原）時重新讀取，讀不到就當作沒有背景圖。</summary>
+    Private Function GetBackgroundImage() As Image
+        Dim path = _project.BackgroundImagePath
+        If path = _backgroundPath Then Return _backgroundImage
+
+        _backgroundImage?.Dispose()
+        _backgroundImage = Nothing
+        _backgroundPath = path
+        If path IsNot Nothing Then
+            Try
+                _backgroundImage = BitmapConversion.ToBitmap(_importer.DecodeFile(path, BackgroundPreviewEdge))
+            Catch ex As Exception When TypeOf ex Is IO.IOException OrElse TypeOf ex Is UnauthorizedAccessException OrElse TypeOf ex Is ImageDecodeException
+            End Try
+        End If
+        Return _backgroundImage
+    End Function
+
+#End Region
+
     Protected Overrides Sub Dispose(disposing As Boolean)
         If disposing Then
             _pendingImports.Clear()
@@ -459,6 +679,8 @@ Public Class MontageEditorControl
                 bmp.Dispose()
             Next
             _previewImages.Clear()
+            _backgroundImage?.Dispose()
+            _backgroundImage = Nothing
         End If
         MyBase.Dispose(disposing)
     End Sub
