@@ -761,13 +761,12 @@ Public Class MontageEditorControl
         Try
             Dim token = cts.Token
             Dim bmp = Await Task.Run(Function() MosaicRenderer.RenderPreview(snapshot, MosaicPreviewEdge, AddressOf SafeLoadThumbnail, target, token))
+            If bmp Is Nothing Then Return ' 已被較新的預覽取消
             If version <> _previewVersion OrElse IsDisposed Then
                 bmp.Dispose()
                 Return
             End If
             SetMosaicPreview(bmp)
-        Catch ex As OperationCanceledException
-            ' 已有較新的預覽在產生
         Catch ex As Exception
             If version = _previewVersion AndAlso Not IsDisposed Then _canvas.MosaicPlaceholder = "無法產生預覽：" & ex.Message
         Finally

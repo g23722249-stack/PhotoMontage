@@ -34,9 +34,11 @@ Public Module MosaicRenderer
     ''' 繪製與 <paramref name="visible"/> 相交的格子。同一張素材的格子一起畫，<paramref name="getTile"/> 每張素材只呼叫一次，
     ''' 畫完後呼叫 <paramref name="releaseTile"/>。
     ''' </summary>
+    ''' <param name="cancellationToken">取消時停止繪製並直接返回（不擲出例外），已畫的部分保留。</param>
     Public Sub DrawTiles(g As Graphics, project As MontageProject, bounds As RectangleF, visible As RectangleF,
                          getTile As Func(Of PhotoAsset, Image), Optional releaseTile As Action(Of PhotoAsset, Image) = Nothing,
-                         Optional highQuality As Boolean = True)
+                         Optional highQuality As Boolean = True,
+                         Optional cancellationToken As Threading.CancellationToken = Nothing)
         Dim settings = project.Mosaic
         If Not settings.IsGenerated Then Return
 
@@ -68,6 +70,7 @@ Public Module MosaicRenderer
             Using attrs As New ImageAttributes(), gray As New SolidBrush(MissingTileColor)
                 attrs.SetWrapMode(WrapMode.TileFlipXY)
                 For Each pair In groups
+                    If cancellationToken.IsCancellationRequested Then Return
                     Dim asset = project.FindPhoto(pair.Key)
                     Dim image = If(asset IsNot Nothing AndAlso asset.Status = PhotoStatus.Ready, getTile(asset), Nothing)
                     If image Is Nothing Then
@@ -112,6 +115,7 @@ Public Module MosaicRenderer
 
     ''' <summary>
     ''' 產生預覽影像（不含文字）：素材使用縮圖，逐張轉成 Bitmap、畫完即釋放。可在背景執行緒執行。
+    ''' 取消時回傳 Nothing（不擲出例外，預覽經常因設定變更而被取消）。
     ''' </summary>
     Public Function RenderPreview(project As MontageProject, longEdge As Integer,
                                   getThumbnail As Func(Of PhotoAsset, DecodedImage), target As DecodedImage,
@@ -124,11 +128,14 @@ Public Module MosaicRenderer
                 g.Clear(MissingTileColor)
                 DrawTiles(g, project, bounds, bounds,
                     Function(asset)
-                        cancellationToken.ThrowIfCancellationRequested()
                         Dim thumb = getThumbnail(asset)
                         Return If(thumb Is Nothing, Nothing, CType(BitmapConversion.ToBitmap(thumb), Image))
                     End Function,
-                    Sub(asset, image) image.Dispose(), highQuality:=False)
+                    Sub(asset, image) image.Dispose(), highQuality:=False, cancellationToken:=cancellationToken)
+                If cancellationToken.IsCancellationRequested Then
+                    result.Dispose()
+                    Return Nothing
+                End If
                 If target IsNot Nothing AndAlso project.Mosaic.Tint > 0 Then
                     Using bmp = BitmapConversion.ToBitmap(target)
                         DrawTint(g, bounds, bmp, project.Mosaic.Tint)
