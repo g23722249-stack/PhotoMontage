@@ -1,6 +1,9 @@
 # PhotoMontage
 
-蒙太奇相片編輯器（拼貼 / 馬賽克），VB.NET + WinForms，`net8.0-windows`。
+蒙太奇相片編輯器，VB.NET + WinForms，`net8.0-windows`。
+
+- **拼貼**：自動排版或固定版型、換位與取景、間距／圓角／背景、文字圖層、復原重做、高解析匯出。
+- **馬賽克**：用大量照片拼出一張主圖，CIELAB 配色、使用次數與相鄰重複控制、疊色、超大尺寸 PNG 匯出。
 可單獨執行，也可掛進 iPhoto.Net。完整規劃見 [docs/PLAN.md](docs/PLAN.md)。
 
 ## 專案結構

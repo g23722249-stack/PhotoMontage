@@ -23,6 +23,20 @@ Public Class MontageEditorControl
     ''' <summary>照片清單變動後延遲更新版面，避免大量匯入時每張都重排。</summary>
     Private ReadOnly _layoutTimer As New System.Windows.Forms.Timer() With {.Interval = 250}
     Private _suppressTemplateEvents As Boolean
+    Private _suppressModeEvents As Boolean
+
+    ' 馬賽克
+    Private ReadOnly _mosaicGenerator As MosaicGenerator
+    Private _mosaicAnalysis As MosaicAnalysis
+    Private _mosaicCts As CancellationTokenSource
+    Private _mosaicPreview As Bitmap
+    Private _previewVersion As Integer
+    Private _previewBuilding As Boolean
+    Private _previewCts As CancellationTokenSource
+    Private _targetPreviewPath As String
+    Private _targetPreview As DecodedImage
+    Private Const MosaicPreviewEdge As Integer = 1600
+    Private Const TargetPreviewEdge As Integer = 1024
     Private ReadOnly _history As New UndoHistory()
 
     ''' <summary>背景圖的預覽影像（長邊 1600 px），以及它對應的路徑。</summary>
@@ -39,6 +53,11 @@ Public Class MontageEditorControl
     Private ReadOnly _textPanel As TextPanel
     Private ReadOnly _tabs As TabControl
     Private ReadOnly _textTab As TabPage
+    Private ReadOnly _layoutTab As TabPage
+    Private ReadOnly _styleTab As TabPage
+    Private ReadOnly _mosaicTab As TabPage
+    Private ReadOnly _mosaicPanel As MosaicPanel
+    Private ReadOnly _modeCombo As ToolStripComboBox
     Private ReadOnly _undoButton As ToolStripButton
     Private ReadOnly _redoButton As ToolStripButton
     Private ReadOnly _progressPanel As Panel
@@ -123,7 +142,9 @@ Public Class MontageEditorControl
         ' 「版面」頁
         Dim ratioLabel As New Label() With {.Text = "畫布比例", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 0, 0, 2)}
         Dim templateLabel As New Label() With {.Text = "版型", .Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(0, 8, 0, 2)}
+        _mosaicGenerator = New MosaicGenerator(_importer)
         Dim layoutTab As New TabPage("版面") With {.Padding = New Padding(6)}
+        _layoutTab = layoutTab
         layoutTab.Controls.Add(_templateList)
         layoutTab.Controls.Add(templateLabel)
         layoutTab.Controls.Add(_ratioCombo)
@@ -136,6 +157,7 @@ Public Class MontageEditorControl
         AddHandler _stylePanel.DesignChanged, Sub(s, e) _canvas.Invalidate()
         AddHandler _stylePanel.BackgroundImageRequested, Sub(s, e) SetBackgroundImage(e.Paths(0))
         Dim styleTab As New TabPage("樣式")
+        _styleTab = styleTab
         styleTab.Controls.Add(_stylePanel)
 
         ' 「文字」頁
@@ -150,6 +172,19 @@ Public Class MontageEditorControl
         _tabs = New TabControl() With {.Dock = DockStyle.Fill}
         _tabs.TabPages.AddRange({layoutTab, styleTab, _textTab})
 
+        ' 「馬賽克」頁（馬賽克模式時取代「版面」與「樣式」）
+        _mosaicPanel = New MosaicPanel() With {.Dock = DockStyle.Fill}
+        AddHandler _mosaicPanel.ChangeStarting, Sub(s, e) RecordUndo(e.Key)
+        AddHandler _mosaicPanel.SettingsChanged, AddressOf OnMosaicSettingsChanged
+        AddHandler _mosaicPanel.GenerateRequested, Sub(s, e) GenerateMosaic()
+        AddHandler _mosaicPanel.CancelRequested, Sub(s, e) _mosaicCts?.Cancel()
+        AddHandler _mosaicPanel.UseSelectedAsTargetRequested, Sub(s, e) UseSelectedAsMosaicTarget()
+        AddHandler _mosaicPanel.TargetFileRequested, Sub(s, e) SetMosaicTarget(e.Paths(0))
+        AddHandler _mosaicPanel.RatioRequested, Sub(s, e) ApplyMosaicRatio(recordUndo:=True)
+        AddHandler _canvas.MosaicCellCommand, AddressOf OnMosaicCellCommand
+        _mosaicTab = New TabPage("馬賽克")
+        _mosaicTab.Controls.Add(_mosaicPanel)
+
         Dim right As New Panel() With {.Dock = DockStyle.Right, .Width = 250, .Padding = New Padding(4)}
         right.Controls.Add(_tabs)
         right.Controls.Add(_exportButton)
@@ -162,7 +197,11 @@ Public Class MontageEditorControl
         Dim addTextButton As New ToolStripButton("新增文字")
         AddHandler addTextButton.Click, Sub(s, e) AddText()
         Dim toolbar As New ToolStrip() With {.GripStyle = ToolStripGripStyle.Hidden, .Dock = DockStyle.Top}
-        toolbar.Items.AddRange({_undoButton, _redoButton, New ToolStripSeparator(), addTextButton})
+        _modeCombo = New ToolStripComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList, .AutoSize = False, .Width = 90}
+        _modeCombo.Items.AddRange({"拼貼", "馬賽克"})
+        AddHandler _modeCombo.SelectedIndexChanged, Sub(s, e) OnModeChanged()
+        toolbar.Items.AddRange({New ToolStripLabel("模式："), _modeCombo, New ToolStripSeparator(),
+                                _undoButton, _redoButton, New ToolStripSeparator(), addTextButton})
         AddHandler _history.Changed, Sub(s, e) UpdateUndoButtons()
 
         Controls.Add(_canvas)
@@ -195,6 +234,8 @@ Public Class MontageEditorControl
             FirstOrDefault(Function(t) t.Id = _project.Collage.TemplateId)
         _suppressTemplateEvents = False
         _stylePanel.Bind(_project)
+        _mosaicPanel.Bind(_project)
+        ApplyModeUi()
         ApplyLayout(reassign:=True)
         _history.Clear()
     End Sub
@@ -354,6 +395,8 @@ Public Class MontageEditorControl
         For Each cell In _project.Collage.Cells
             If cell.PhotoId IsNot Nothing AndAlso ids.Contains(cell.PhotoId) Then cell.PhotoId = Nothing
         Next
+        ' 被移除的素材在馬賽克中改以灰色格子顯示
+        If IsMosaicMode AndAlso _project.Mosaic.Tiles.Any(Function(t) t IsNot Nothing AndAlso ids.Contains(t)) Then RebuildMosaicPreview()
         OnCellsChanged()
         ScheduleLayout()
     End Sub
@@ -459,8 +502,9 @@ Public Class MontageEditorControl
     Private Sub OnLayoutTimerTick(sender As Object, e As EventArgs)
         _layoutTimer.Stop()
         If IsDisposed Then Return
-        ' 自動排版：照片變了就整個重排；固定版型：只把新照片補進空格
+        ' 自動排版：照片變了就整個重排；固定版型：只把新照片補進空格（馬賽克模式下也維持拼貼版面）
         ApplyLayout(reassign:=IsAutoLayout)
+        UpdateMosaicStatus()
     End Sub
 
     ''' <summary>依目前版型更新格子。<paramref name="reassign"/> 為 True 時重建格子並重新分配所有照片。</summary>
@@ -472,7 +516,7 @@ Public Class MontageEditorControl
             ' 保留每張照片的取景（相對值，格子形狀改變後仍然有效）
             Dim crops = settings.Cells.Where(Function(c) c.PhotoId IsNot Nothing).
                 GroupBy(Function(c) c.PhotoId).ToDictionary(Function(g) g.Key, Function(g) g.First().Crop)
-            Dim ready = _project.Photos.Where(Function(p) p.Status = PhotoStatus.Ready).ToList()
+            Dim ready = _project.Photos.Where(Function(p) p.Status = PhotoStatus.Ready).Take(_importer.Limits.MaxCollagePhotos).ToList()
             Dim template = JustifiedLayout.Create(ready.Select(Function(p) p.AspectRatio).ToList(), _project.CanvasAspect)
             settings.Cells = template.CreateCells()
             For i = 0 To ready.Count - 1
@@ -490,19 +534,27 @@ Public Class MontageEditorControl
         End If
 
         _canvas.AllowClear = Not IsAutoLayout
-        If reassign AndAlso Not IsAutoLayout Then _canvas.ResetInteraction() Else _canvas.ClampInteraction()
+        If Not IsMosaicMode Then
+            If reassign AndAlso Not IsAutoLayout Then _canvas.ResetInteraction() Else _canvas.ClampInteraction()
+        End If
         OnCellsChanged()
     End Sub
 
     ''' <summary>格子內容改變後：更新縮圖勾選標記、釋放不再使用的預覽影像、重繪。</summary>
     Private Sub OnCellsChanged()
-        Dim used = New HashSet(Of String)(_project.Collage.Cells.Where(Function(c) c.PhotoId IsNot Nothing).Select(Function(c) c.PhotoId))
-        For Each id In _previewImages.Keys.Where(Function(k) Not used.Contains(k)).ToList()
+        Dim collageUsed = New HashSet(Of String)(_project.Collage.Cells.Where(Function(c) c.PhotoId IsNot Nothing).Select(Function(c) c.PhotoId))
+        Dim keep = If(IsMosaicMode, New HashSet(Of String)(), collageUsed)
+        For Each id In _previewImages.Keys.Where(Function(k) Not keep.Contains(k)).ToList()
             _previewImages(id).Dispose()
             _previewImages.Remove(id)
         Next
-        _strip.UsedPhotoIds = used
-        _exportButton.Enabled = used.Count > 0
+        If IsMosaicMode Then
+            _strip.UsedPhotoIds = New HashSet(Of String)(_project.Mosaic.Tiles.Where(Function(t) t IsNot Nothing))
+            _exportButton.Enabled = _project.Mosaic.IsGenerated
+        Else
+            _strip.UsedPhotoIds = collageUsed
+            _exportButton.Enabled = collageUsed.Count > 0
+        End If
         _canvas.Invalidate()
     End Sub
 
@@ -522,17 +574,301 @@ Public Class MontageEditorControl
 
 #End Region
 
+#Region "模式"
+
+    Private ReadOnly Property IsMosaicMode As Boolean
+        Get
+            Return _project.Mode = MontageMode.Mosaic
+        End Get
+    End Property
+
+    Private Sub OnModeChanged()
+        If _suppressModeEvents Then Return
+        Dim mode = If(_modeCombo.SelectedIndex = 1, MontageMode.Mosaic, MontageMode.Collage)
+        If mode = _project.Mode Then Return
+        RecordUndo()
+        _project.Mode = mode
+        ApplyModeUi()
+        If IsMosaicMode Then
+            ApplyMosaicRatio(recordUndo:=False) ' 依目前畫布重算列數，格子保持接近正方形
+        Else
+            ApplyLayout(reassign:=IsAutoLayout)
+        End If
+    End Sub
+
+    ''' <summary>依模式切換右側分頁、畫布與狀態。</summary>
+    Private Sub ApplyModeUi()
+        _suppressModeEvents = True
+        _modeCombo.SelectedIndex = If(IsMosaicMode, 1, 0)
+        _suppressModeEvents = False
+
+        Dim pages = If(IsMosaicMode, {_mosaicTab, _textTab}, {_layoutTab, _styleTab, _textTab})
+        If Not _tabs.TabPages.Cast(Of TabPage)().SequenceEqual(pages) Then
+            Dim selected = _tabs.SelectedTab
+            _tabs.TabPages.Clear()
+            _tabs.TabPages.AddRange(pages)
+            If pages.Contains(selected) Then _tabs.SelectedTab = selected
+        End If
+        _mosaicPanel.RefreshFromProject()
+        _canvas.ResetInteraction()
+        UpdateMosaicStatus()
+        OnCellsChanged()
+    End Sub
+
+#End Region
+
+#Region "馬賽克"
+
+    Private Function SnapshotProject() As MontageProject
+        Dim copy As New MontageProject()
+        copy.Photos.AddRange(_project.Photos)
+        DesignState.Capture(_project).ApplyTo(copy)
+        Return copy
+    End Function
+
+    ''' <summary>素材張數與畫布提示文字。</summary>
+    Private Sub UpdateMosaicStatus()
+        Dim tiles = MosaicGenerator.GetTileCandidates(_project).Count
+        _mosaicPanel.TileCount = tiles
+        Dim m = _project.Mosaic
+        _canvas.MosaicPlaceholder =
+            If(m.TargetPath Is Nothing, "請在右側選擇主圖",
+            If(tiles < MosaicGenerator.MinTiles, "請先在左側加入素材照片（建議 100 張以上）",
+            If(Not m.IsGenerated, "按右側「產生馬賽克」", If(_previewBuilding, "產生預覽中…", ""))))
+        _canvas.Invalidate()
+    End Sub
+
+    Private Sub OnMosaicSettingsChanged(sender As Object, e As MosaicSettingsChangedEventArgs)
+        If e.TilesInvalidated Then SetMosaicPreview(Nothing)
+        RebuildMosaicPreview()
+        OnCellsChanged()
+    End Sub
+
+    Private Sub UseSelectedAsMosaicTarget()
+        Dim asset = _strip.SelectedAssets.FirstOrDefault(Function(a) a.Status = PhotoStatus.Ready)
+        If asset Is Nothing Then
+            MessageBox.Show(Me, "請先在左側點選一張照片。", "主圖", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        SetMosaicTarget(asset.FilePath)
+    End Sub
+
+    Private Sub SetMosaicTarget(path As String)
+        Dim preview = TryLoadTargetPreview(path, showError:=True)
+        If preview Is Nothing Then Return
+
+        RecordUndo()
+        _project.Mosaic.TargetPath = path
+        _project.Mosaic.Tiles.Clear()
+        ApplyMosaicRatio(recordUndo:=False)
+    End Sub
+
+    ''' <summary>套用馬賽克頁選的畫布比例（「依主圖比例」時以主圖長寬比為準），並重算列數。</summary>
+    Private Sub ApplyMosaicRatio(recordUndo As Boolean)
+        Dim size = _project.CanvasSize
+        If _mosaicPanel.MatchTargetAspect Then
+            Dim target = TryLoadTargetPreview(_project.Mosaic.TargetPath, showError:=False)
+            If target IsNot Nothing Then size = ExportPlanner.ComputeOutputSize(target.Width / target.Height, CanvasPresets.DefaultLongEdge)
+        ElseIf _mosaicPanel.SelectedPreset IsNot Nothing Then
+            size = _mosaicPanel.SelectedPreset.SizeFor(CanvasPresets.DefaultLongEdge)
+        End If
+
+        Dim m = _project.Mosaic
+        Dim rows = MosaicSettings.RowsFor(m.Columns, size.Width / CDbl(size.Height))
+        If size <> _project.CanvasSize OrElse rows <> m.Rows Then
+            If recordUndo Then Me.RecordUndo()
+            _project.CanvasSize = size
+            m.Rows = rows
+            m.Tiles.Clear()
+        End If
+        _mosaicPanel.RefreshFromProject()
+        SetMosaicPreview(Nothing)
+        RebuildMosaicPreview()
+        OnCellsChanged()
+    End Sub
+
+    ''' <summary>主圖的預覽（長邊 1024，用於比例與疊色預覽）；讀不到時回傳 Nothing。</summary>
+    Private Function TryLoadTargetPreview(path As String, showError As Boolean) As DecodedImage
+        If String.IsNullOrEmpty(path) Then Return Nothing
+        If path = _targetPreviewPath AndAlso _targetPreview IsNot Nothing Then Return _targetPreview
+        Try
+            _targetPreview = _importer.DecodeFile(path, TargetPreviewEdge)
+            _targetPreviewPath = path
+            Return _targetPreview
+        Catch ex As Exception When TypeOf ex Is IO.IOException OrElse TypeOf ex Is UnauthorizedAccessException OrElse TypeOf ex Is ImageDecodeException
+            If showError Then MessageBox.Show(Me, "無法讀取這張圖片：" & ex.Message, "主圖", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return Nothing
+        End Try
+    End Function
+
+    Private Async Sub GenerateMosaic()
+        If _mosaicCts IsNot Nothing Then Return
+        RecordUndo()
+        _mosaicCts = New CancellationTokenSource()
+        _mosaicPanel.SetBusy(True)
+        Dim snapshot = SnapshotProject()
+        Dim token = _mosaicCts.Token
+        Dim progress As New Progress(Of ExportProgress)(Sub(p) If Not IsDisposed Then _mosaicPanel.ReportProgress(p))
+
+        Try
+            Dim result = Await Task.Run(Function() _mosaicGenerator.Generate(snapshot, progress, token))
+            If IsDisposed Then Return
+            Dim m = _project.Mosaic
+            If Not result.Analysis.Matches(m) OrElse m.TargetPath <> snapshot.Mosaic.TargetPath Then
+                _mosaicPanel.ShowStatus("產生期間設定已變更，請重新產生。")
+                Return
+            End If
+            m.Tiles = result.Tiles
+            _mosaicAnalysis = result.Analysis
+            _mosaicPanel.SetBusy(False)
+            _mosaicPanel.RefreshFromProject()
+            RebuildMosaicPreview()
+            OnCellsChanged()
+        Catch ex As OperationCanceledException
+            If Not IsDisposed Then _mosaicPanel.ShowStatus("已取消。")
+        Catch ex As Exception
+            ' Async Sub 中未處理的例外會讓整個程式（含宿主）結束，所以一律攔下
+            If Not IsDisposed Then MessageBox.Show(Me, "無法產生馬賽克：" & ex.Message, "馬賽克", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+        Finally
+            _mosaicCts?.Dispose()
+            _mosaicCts = Nothing
+            If Not IsDisposed Then
+                _mosaicPanel.SetBusy(False)
+                UpdateMosaicStatus()
+            End If
+        End Try
+    End Sub
+
+    ''' <summary>在背景重新產生預覽影像；較舊的結果會被丟棄。</summary>
+    Private Async Sub RebuildMosaicPreview()
+        _previewVersion += 1
+        Dim version = _previewVersion
+        If Not IsMosaicMode OrElse Not _project.Mosaic.IsGenerated Then
+            SetMosaicPreview(Nothing)
+            _previewBuilding = False
+            UpdateMosaicStatus()
+            Return
+        End If
+
+        Dim snapshot = SnapshotProject()
+        Dim target = If(snapshot.Mosaic.Tint > 0, TryLoadTargetPreview(snapshot.Mosaic.TargetPath, showError:=False), Nothing)
+        ' 取消上一次還在跑的預覽（例如拖曳疊色滑桿時）
+        _previewCts?.Cancel()
+        Dim cts As New CancellationTokenSource()
+        _previewCts = cts
+        _previewBuilding = True
+        UpdateMosaicStatus()
+        Try
+            Dim token = cts.Token
+            Dim bmp = Await Task.Run(Function() MosaicRenderer.RenderPreview(snapshot, MosaicPreviewEdge, AddressOf SafeLoadThumbnail, target, token))
+            If version <> _previewVersion OrElse IsDisposed Then
+                bmp.Dispose()
+                Return
+            End If
+            SetMosaicPreview(bmp)
+        Catch ex As OperationCanceledException
+            ' 已有較新的預覽在產生
+        Catch ex As Exception
+            If version = _previewVersion AndAlso Not IsDisposed Then _canvas.MosaicPlaceholder = "無法產生預覽：" & ex.Message
+        Finally
+            If _previewCts Is cts Then _previewCts = Nothing
+            cts.Dispose()
+            If version = _previewVersion AndAlso Not IsDisposed Then
+                _previewBuilding = False
+                UpdateMosaicStatus()
+            End If
+        End Try
+    End Sub
+
+    Private Function SafeLoadThumbnail(asset As PhotoAsset) As DecodedImage
+        Try
+            Return _importer.LoadThumbnail(asset)
+        Catch ex As Exception When TypeOf ex Is IO.IOException OrElse TypeOf ex Is UnauthorizedAccessException OrElse TypeOf ex Is ImageDecodeException
+            Return Nothing
+        End Try
+    End Function
+
+    Private Sub SetMosaicPreview(bmp As Bitmap)
+        If _mosaicPreview IsNot bmp Then _mosaicPreview?.Dispose()
+        _mosaicPreview = bmp
+        _canvas.MosaicPreview = bmp
+        _canvas.Invalidate()
+    End Sub
+
+    Private Sub OnMosaicCellCommand(sender As Object, e As MosaicCellCommandEventArgs)
+        Dim m = _project.Mosaic
+        If Not m.IsGenerated OrElse e.Cell < 0 OrElse e.Cell >= m.CellCount Then Return
+
+        Dim newId As String
+        If e.Kind = MosaicCellCommandKind.NextAlternative Then
+            Dim analysis = _mosaicAnalysis
+            If analysis Is Nothing OrElse Not analysis.Matches(m) Then
+                MessageBox.Show(Me, "請先按「產生馬賽克」重新產生，才能使用這個功能。", "馬賽克", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+            Dim assignment = m.Tiles.Select(Function(id) analysis.IndexOfTile(id)).ToList()
+            Dim nextIndex = MosaicMatcher.NextAlternative(e.Cell, assignment(e.Cell), analysis.CellFeatures, m.Columns, analysis.TileFeatures, assignment)
+            newId = analysis.TileAssets(nextIndex).Id
+        Else
+            Dim asset = _strip.SelectedAssets.FirstOrDefault(Function(a) a.Status = PhotoStatus.Ready)
+            If asset Is Nothing Then
+                MessageBox.Show(Me, "請先在左側點選一張照片。", "馬賽克", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+            newId = asset.Id
+        End If
+        If newId = m.Tiles(e.Cell) Then Return
+
+        RecordUndo()
+        m.Tiles(e.Cell) = newId
+        PatchMosaicPreviewCell(e.Cell)
+        OnCellsChanged()
+    End Sub
+
+    ''' <summary>只重畫預覽中的一格；正在背景重建時改為整張重建。</summary>
+    Private Sub PatchMosaicPreviewCell(cell As Integer)
+        If _mosaicPreview Is Nothing OrElse _previewBuilding Then
+            RebuildMosaicPreview()
+            Return
+        End If
+
+        Dim bounds As New RectangleF(0, 0, _mosaicPreview.Width, _mosaicPreview.Height)
+        Dim rect = MosaicRenderer.GetCellRect(_project.Mosaic, bounds, cell)
+        Using g = Graphics.FromImage(_mosaicPreview)
+            g.SetClip(rect)
+            MosaicRenderer.DrawTiles(g, _project, bounds, rect,
+                Function(asset)
+                    Dim thumb = SafeLoadThumbnail(asset)
+                    Return If(thumb Is Nothing, Nothing, CType(BitmapConversion.ToBitmap(thumb), Image))
+                End Function,
+                Sub(asset, image) image.Dispose(), highQuality:=False)
+            Dim target = If(_project.Mosaic.Tint > 0, TryLoadTargetPreview(_project.Mosaic.TargetPath, showError:=False), Nothing)
+            If target IsNot Nothing Then
+                Using bmp = BitmapConversion.ToBitmap(target)
+                    MosaicRenderer.DrawTint(g, bounds, bmp, _project.Mosaic.Tint)
+                End Using
+            End If
+        End Using
+        _canvas.Invalidate()
+    End Sub
+
+#End Region
+
 #Region "匯出"
 
     ''' <summary>開啟匯出對話框。匯出成功時觸發 <see cref="Exported"/> 並回傳檔案路徑；取消時回傳 Nothing。</summary>
     Public Function ShowExportDialog() As String
-        If Not _project.Collage.Cells.Exists(Function(c) c.PhotoId IsNot Nothing) Then Return Nothing
+        If IsMosaicMode Then
+            If Not _project.Mosaic.IsGenerated Then Return Nothing
+        ElseIf Not _project.Collage.Cells.Exists(Function(c) c.PhotoId IsNot Nothing) Then
+            Return Nothing
+        End If
 
         If _importing AndAlso MessageBox.Show(Me, "還有照片正在讀取中，讀取中的照片不會出現在作品裡。仍要匯出嗎？", "匯出",
                                                MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Return Nothing
 
         Dim result As ExportResult
-        Using dlg As New ExportDialog(_project, New CollageExporter(_importer), _options.DefaultExportFolder)
+        Using dlg As New ExportDialog(_project, New MontageExporter(_importer), _options.DefaultExportFolder)
             If dlg.ShowDialog(Me) <> DialogResult.OK OrElse dlg.Result Is Nothing Then Return Nothing
             result = dlg.Result
         End Using
@@ -596,6 +932,8 @@ Public Class MontageEditorControl
             OnCellsChanged()
         End If
         _stylePanel.RefreshFromProject()
+        ApplyModeUi()
+        If IsMosaicMode Then RebuildMosaicPreview()
         OnTextSelectionChanged()
     End Sub
 
@@ -720,6 +1058,14 @@ Public Class MontageEditorControl
             _previewImages.Clear()
             _backgroundImage?.Dispose()
             _backgroundImage = Nothing
+            _mosaicCts?.Cancel()
+            _previewCts?.Cancel()
+            _mosaicPreview?.Dispose()
+            _mosaicPreview = Nothing
+            ' 不在 TabControl 中的分頁不會被自動釋放
+            For Each page In {_layoutTab, _styleTab, _mosaicTab, _textTab}
+                page.Dispose()
+            Next
         End If
         MyBase.Dispose(disposing)
     End Sub

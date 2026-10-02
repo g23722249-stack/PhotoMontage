@@ -47,6 +47,24 @@ Public Module ExportPlanner
         Return output + photo + background
     End Function
 
+    ''' <summary>串流寫出 PNG（馬賽克）時的像素上限：16000 × 16000。</summary>
+    Public Const MaxStreamingPixels As Long = CLng(MaxLongEdge) * MaxLongEdge
+
+    ''' <summary>
+    ''' 依模式與格式檢查輸出尺寸。馬賽克的 PNG 以分段串流寫出，上限為 <see cref="MaxStreamingPixels"/>；
+    ''' 其他情況需要整張 Bitmap，上限為 <see cref="MaxOutputPixels"/>。
+    ''' </summary>
+    Public Function ValidateOutputSize(size As Size, format As ExportFormat, mode As MontageMode) As String
+        If mode = MontageMode.Mosaic AndAlso format = ExportFormat.Png Then
+            If size.Width < 1 OrElse size.Height < 1 Then Return "輸出尺寸無效。"
+            If size.Width > MaxLongEdge OrElse size.Height > MaxLongEdge Then Return $"長邊不可超過 {MaxLongEdge} 像素。"
+            Return Nothing
+        End If
+        Dim invalid = ValidateOutputSize(size)
+        If invalid IsNot Nothing AndAlso mode = MontageMode.Mosaic Then invalid &= "（PNG 可輸出更大的尺寸）"
+        Return invalid
+    End Function
+
     ''' <summary>檢查輸出尺寸；不合法時回傳原因，合法時回傳 Nothing。</summary>
     Public Function ValidateOutputSize(size As Size) As String
         If size.Width < 1 OrElse size.Height < 1 Then Return "輸出尺寸無效。"

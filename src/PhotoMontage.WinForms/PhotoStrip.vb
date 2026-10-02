@@ -71,6 +71,13 @@ Friend Class PhotoStrip
         End Get
     End Property
 
+    ''' <summary>目前選取的照片（依清單順序）。</summary>
+    Public ReadOnly Property SelectedAssets As IReadOnlyList(Of PhotoAsset)
+        Get
+            Return _items.Where(Function(i) i.Selected).Select(Function(i) i.Asset).ToList()
+        End Get
+    End Property
+
     ''' <summary>已放進畫布的照片 Id；這些照片會顯示勾選標記。</summary>
     Public Property UsedPhotoIds As ISet(Of String)
         Get

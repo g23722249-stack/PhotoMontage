@@ -3,6 +3,7 @@ Public NotInheritable Class LruCache(Of TKey, TValue)
 
     Private ReadOnly _budget As Long
     Private ReadOnly _sizeOf As Func(Of TValue, Long)
+    Private ReadOnly _onEvict As Action(Of TValue)
     Private ReadOnly _map As New Dictionary(Of TKey, LinkedListNode(Of Entry))
     Private ReadOnly _order As New LinkedList(Of Entry) ' First = 最近使用
     Private ReadOnly _lock As New Object()
@@ -14,11 +15,13 @@ Public NotInheritable Class LruCache(Of TKey, TValue)
         Public Size As Long
     End Structure
 
-    Public Sub New(budget As Long, sizeOf As Func(Of TValue, Long))
+    ''' <param name="onEvict">項目被淘汰、取代、移除或清除時呼叫（例如 Dispose Bitmap）。</param>
+    Public Sub New(budget As Long, sizeOf As Func(Of TValue, Long), Optional onEvict As Action(Of TValue) = Nothing)
         If budget <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(budget))
         If sizeOf Is Nothing Then Throw New ArgumentNullException(NameOf(sizeOf))
         _budget = budget
         _sizeOf = sizeOf
+        _onEvict = onEvict
     End Sub
 
     Public ReadOnly Property Budget As Long
@@ -57,12 +60,12 @@ Public NotInheritable Class LruCache(Of TKey, TValue)
         End SyncLock
     End Function
 
-    ''' <summary>加入或取代項目。單一項目超過整體預算時不會存入。</summary>
-    Public Sub Add(key As TKey, value As TValue)
+    ''' <summary>加入或取代項目。單一項目超過整體預算時不會存入，並回傳 False（呼叫端仍擁有它）。</summary>
+    Public Function Add(key As TKey, value As TValue) As Boolean
         Dim size = _sizeOf(value)
         SyncLock _lock
             RemoveCore(key)
-            If size > _budget Then Return
+            If size > _budget Then Return False
 
             Dim node = _order.AddFirst(New Entry With {.Key = key, .Value = value, .Size = size})
             _map(key) = node
@@ -71,8 +74,9 @@ Public NotInheritable Class LruCache(Of TKey, TValue)
             While _currentSize > _budget
                 RemoveCore(_order.Last.Value.Key)
             End While
+            Return True
         End SyncLock
-    End Sub
+    End Function
 
     Public Function Remove(key As TKey) As Boolean
         SyncLock _lock
@@ -82,6 +86,11 @@ Public NotInheritable Class LruCache(Of TKey, TValue)
 
     Public Sub Clear()
         SyncLock _lock
+            If _onEvict IsNot Nothing Then
+                For Each e In _order
+                    _onEvict(e.Value)
+                Next
+            End If
             _map.Clear()
             _order.Clear()
             _currentSize = 0
@@ -94,6 +103,7 @@ Public NotInheritable Class LruCache(Of TKey, TValue)
         _map.Remove(key)
         _order.Remove(node)
         _currentSize -= node.Value.Size
+        _onEvict?.Invoke(node.Value.Value)
         Return True
     End Function
 

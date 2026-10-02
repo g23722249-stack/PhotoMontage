@@ -10,6 +10,8 @@ Friend Class FakeCodec
 
     Public Const FlagCorrupt As Byte = 1
     Public Const FlagCodecMissing As Byte = 2
+    ''' <summary>左半邊為指定顏色、右半邊為白色。</summary>
+    Public Const FlagSplitWhite As Byte = 4
 
     Private Shared ReadOnly Marker As Byte() = Text.Encoding.ASCII.GetBytes("FAKE")
     Private _decodeCount As Integer
@@ -59,7 +61,16 @@ Friend Class FakeCodec
         Dim f = Parse(stream)
         If (f.Flags And FlagCorrupt) <> 0 Then Throw New ImageDecodeException("corrupt", False)
         Dim scale = Math.Min(1.0, maxEdge / Math.Max(f.W, f.H))
-        Return Solid(Math.Max(1, CInt(f.W * scale)), Math.Max(1, CInt(f.H * scale)), f.Argb)
+        Dim img = Solid(Math.Max(1, CInt(f.W * scale)), Math.Max(1, CInt(f.H * scale)), f.Argb)
+        If (f.Flags And FlagSplitWhite) <> 0 Then
+            For y = 0 To img.Height - 1
+                For x = img.Width \ 2 To img.Width - 1
+                    Dim i = (y * img.Width + x) * 4
+                    img.Pixels(i) = 255 : img.Pixels(i + 1) = 255 : img.Pixels(i + 2) = 255 : img.Pixels(i + 3) = 255
+                Next
+            Next
+        End If
+        Return img
     End Function
 
     Public Function Encode(image As DecodedImage) As Byte() Implements IImageCodec.Encode

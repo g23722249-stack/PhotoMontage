@@ -2,11 +2,12 @@ Imports System.Drawing
 Imports System.Text.Json
 
 ''' <summary>
-''' 作品「設計」部分的可序列化快照：畫布、背景、版型、格子與取景、文字圖層。
+''' 作品「設計」部分的可序列化快照：模式、畫布、背景、版型、格子與取景、馬賽克、文字圖層。
 ''' 不含照片清單本身（照片的匯入與移除由縮圖清單管理）。
 ''' 用於復原／重做，之後也可作為專案存檔格式的基礎。
 ''' </summary>
 Public NotInheritable Class DesignState
+    Public Property Mode As Integer
     Public Property CanvasWidth As Integer
     Public Property CanvasHeight As Integer
     Public Property BackgroundArgb As Integer
@@ -16,6 +17,19 @@ Public NotInheritable Class DesignState
     Public Property CornerRadius As Single
     Public Property Cells As New List(Of CellState)
     Public Property Texts As New List(Of TextState)
+    Public Property Mosaic As New MosaicState
+
+    ''' <summary>馬賽克設定；格子結果以「素材 Id 表＋索引」儲存，避免每格重複完整 Id。</summary>
+    Public NotInheritable Class MosaicState
+        Public Property TargetPath As String
+        Public Property Columns As Integer
+        Public Property Rows As Integer
+        Public Property Tint As Single
+        Public Property MaxRepeat As Integer
+        Public Property AvoidAdjacent As Boolean
+        Public Property TileIds As New List(Of String)
+        Public Property TileIndexes As New List(Of Integer)
+    End Class
 
     Public NotInheritable Class CellState
         Public Property X As Single
@@ -49,7 +63,30 @@ Public NotInheritable Class DesignState
     End Class
 
     Public Shared Function Capture(project As MontageProject) As DesignState
+        Dim m = project.Mosaic
+        Dim ids As New List(Of String)
+        Dim lookup As New Dictionary(Of String, Integer)
+        Dim indexes As New List(Of Integer)(m.Tiles.Count)
+        For Each id In m.Tiles
+            If id Is Nothing Then
+                indexes.Add(-1)
+                Continue For
+            End If
+            Dim i As Integer
+            If Not lookup.TryGetValue(id, i) Then
+                i = ids.Count
+                ids.Add(id)
+                lookup(id) = i
+            End If
+            indexes.Add(i)
+        Next
+
         Return New DesignState With {
+            .Mode = CInt(project.Mode),
+            .Mosaic = New MosaicState With {
+                .TargetPath = m.TargetPath, .Columns = m.Columns, .Rows = m.Rows, .Tint = m.Tint,
+                .MaxRepeat = m.MaxRepeat, .AvoidAdjacent = m.AvoidAdjacentDuplicates,
+                .TileIds = ids, .TileIndexes = indexes},
             .CanvasWidth = project.CanvasSize.Width,
             .CanvasHeight = project.CanvasSize.Height,
             .BackgroundArgb = project.BackgroundColor.ToArgb(),
@@ -72,6 +109,14 @@ Public NotInheritable Class DesignState
 
     ''' <summary>把快照套回專案（照片清單不變）。</summary>
     Public Sub ApplyTo(project As MontageProject)
+        project.Mode = CType(Mode, MontageMode)
+        Dim ms = If(Mosaic, New MosaicState())
+        project.Mosaic = New MosaicSettings With {
+            .TargetPath = ms.TargetPath,
+            .Columns = If(ms.Columns > 0, ms.Columns, 60),
+            .Rows = If(ms.Rows > 0, ms.Rows, 60),
+            .Tint = ms.Tint, .MaxRepeat = ms.MaxRepeat, .AvoidAdjacentDuplicates = ms.AvoidAdjacent,
+            .Tiles = ms.TileIndexes.Select(Function(i) If(i >= 0 AndAlso i < ms.TileIds.Count, ms.TileIds(i), Nothing)).ToList()}
         project.CanvasSize = New Size(CanvasWidth, CanvasHeight)
         project.BackgroundColor = Color.FromArgb(BackgroundArgb)
         project.BackgroundImagePath = BackgroundImagePath

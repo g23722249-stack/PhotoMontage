@@ -16,7 +16,7 @@ Friend Class ExportDialog
     Private Shared _lastFolder As String
 
     Private ReadOnly _project As MontageProject
-    Private ReadOnly _exporter As CollageExporter
+    Private ReadOnly _exporter As MontageExporter
     Private _cts As CancellationTokenSource
 
     Private ReadOnly _preset As ComboBox
@@ -35,7 +35,7 @@ Friend Class ExportDialog
     ''' <summary>匯出成功後的結果；未匯出時為 Nothing。</summary>
     Public Property Result As ExportResult
 
-    Public Sub New(project As MontageProject, exporter As CollageExporter, defaultFolder As String)
+    Public Sub New(project As MontageProject, exporter As MontageExporter, defaultFolder As String)
         _project = project
         _exporter = exporter
 
@@ -151,13 +151,15 @@ Friend Class ExportDialog
         _customEdge.Enabled = SelectedPreset.IsCustom
         Dim settings = BuildSettings()
         Dim size = settings.GetOutputSize(_project.CanvasAspect)
-        Dim invalid = ExportPlanner.ValidateOutputSize(size)
+        Dim mosaic = _project.Mode = MontageMode.Mosaic
+        Dim invalid = ExportPlanner.ValidateOutputSize(size, settings.Format, _project.Mode)
 
         Dim text = $"{size.Width} × {size.Height} 像素（{size.Width * CLng(size.Height) / 1_000_000.0:0.#} 百萬像素）"
+        If mosaic Then text &= $"{vbLf}每格約 {size.Width / Math.Max(1, _project.Mosaic.Columns):0} 像素"
         If settings.Dpi >= 300 Then text &= $"{vbLf}列印約 {size.Width / settings.Dpi * 2.54:0.#} × {size.Height / settings.Dpi * 2.54:0.#} 公分"
         If invalid IsNot Nothing Then
             text &= vbLf & invalid
-        ElseIf Not Environment.Is64BitProcess AndAlso CLng(size.Width) * size.Height > 30_000_000L Then
+        ElseIf Not (mosaic AndAlso settings.Format = ExportFormat.Png) AndAlso Not Environment.Is64BitProcess AndAlso CLng(size.Width) * size.Height > 30_000_000L Then
             text &= vbLf & "解析度很高，在 32 位元模式下可能記憶體不足。"
         End If
         _sizeLabel.Text = text
@@ -168,6 +170,7 @@ Friend Class ExportDialog
     Private Sub OnFormatChanged()
         _quality.Enabled = _jpeg.Checked
         If _path.Text.Length > 0 Then _path.Text = ExportPlanner.EnsureExtension(_path.Text, SelectedFormat)
+        UpdateSize()
     End Sub
 
     Private Sub OnBrowse(sender As Object, e As EventArgs)

@@ -8,6 +8,7 @@ Imports PhotoMontage.Core
 ''' 拼貼預覽與編輯畫布。
 ''' 照片：拖曳到另一格 = 交換；雙擊進入取景模式（拖曳平移、滾輪縮放、Esc 結束）；滾輪直接縮放。
 ''' 文字：點選後拖曳移動、拖曳上方圓點旋轉（Shift 每 15 度）、Ctrl+滾輪調整大小、雙擊編輯、Delete 刪除。
+''' 馬賽克模式：顯示預覽影像；點選格子、滑鼠停留顯示素材檔名、右鍵更換素材。
 ''' 每次變更前觸發 <see cref="ChangeStarting"/>（供復原記錄），變更後觸發 <see cref="CellsChanged"/> 或 <see cref="TextsChanged"/>。
 ''' </summary>
 Friend Class CollageCanvas
@@ -48,6 +49,13 @@ Friend Class CollageCanvas
     Private ReadOnly _menuSeparator As ToolStripItem
     Private ReadOnly _menuClear As ToolStripItem
     Private ReadOnly _menuDeleteText As ToolStripItem
+    Private ReadOnly _menuMosaicNext As ToolStripItem
+    Private ReadOnly _menuMosaicSelected As ToolStripItem
+    Private ReadOnly _toolTip As New ToolTip()
+    Private _hoverMosaicCell As Integer = -1
+
+    ''' <summary>馬賽克格子的右鍵命令。</summary>
+    Public Event MosaicCellCommand As EventHandler(Of MosaicCellCommandEventArgs)
 
     ''' <summary>即將變更（格子或文字）。Key 相同的連續變更可合併成一個復原步驟。</summary>
     Public Event ChangeStarting As EventHandler(Of ChangeStartingEventArgs)
@@ -80,6 +88,10 @@ Friend Class CollageCanvas
         _menu.Items.Add(_menuSeparator)
         _menuClear = _menu.Items.Add("清空此格", Nothing, Sub() ClearCell(_selected))
         _menuDeleteText = _menu.Items.Add("刪除文字", Nothing, Sub() DeleteSelectedText())
+        _menuMosaicNext = _menu.Items.Add("換成下一個相近的素材", Nothing,
+            Sub() RaiseEvent MosaicCellCommand(Me, New MosaicCellCommandEventArgs(_selected, MosaicCellCommandKind.NextAlternative)))
+        _menuMosaicSelected = _menu.Items.Add("換成左側選取的照片", Nothing,
+            Sub() RaiseEvent MosaicCellCommand(Me, New MosaicCellCommandEventArgs(_selected, MosaicCellCommandKind.UseSelectedPhoto)))
         AddHandler _menu.Opening, AddressOf OnMenuOpening
         ContextMenuStrip = _menu
     End Sub
@@ -100,6 +112,25 @@ Friend Class CollageCanvas
 
     ''' <summary>取得背景圖的預覽影像；回傳 Nothing 表示沒有背景圖。影像由提供者擁有。</summary>
     Public Property BackgroundImageProvider As Func(Of Image)
+
+    ''' <summary>馬賽克預覽影像（不含文字）；Nothing 表示尚未產生。影像由提供者擁有。</summary>
+    Public Property MosaicPreview As Image
+
+    ''' <summary>馬賽克模式下的訊息（例如「按產生馬賽克」）。</summary>
+    Public Property MosaicPlaceholder As String
+
+    Private ReadOnly Property IsMosaic As Boolean
+        Get
+            Return _project IsNot Nothing AndAlso _project.Mode = MontageMode.Mosaic
+        End Get
+    End Property
+
+    ''' <summary>選取的馬賽克格子；沒有時為 -1。</summary>
+    Public ReadOnly Property SelectedMosaicCell As Integer
+        Get
+            Return If(IsMosaic, _selected, -1)
+        End Get
+    End Property
 
     ''' <summary>是否允許清空格子（自動排版時每張照片都有固定的格子，不允許）。</summary>
     Public Property AllowClear As Boolean = True
@@ -164,7 +195,7 @@ Friend Class CollageCanvas
     End Function
 
     Private Function GetCellRects() As List(Of RectangleF)
-        If _project Is Nothing Then Return New List(Of RectangleF)
+        If _project Is Nothing OrElse IsMosaic Then Return New List(Of RectangleF)
         Return CellGeometry.GetCellRects(_project.Collage, GetCanvasBounds())
     End Function
 
@@ -215,7 +246,7 @@ Friend Class CollageCanvas
     End Function
 
     Private Function HasPhoto(index As Integer) As Boolean
-        Return _project IsNot Nothing AndAlso index >= 0 AndAlso index < Cells.Count AndAlso Cells(index).PhotoId IsNot Nothing
+        Return _project IsNot Nothing AndAlso Not IsMosaic AndAlso index >= 0 AndAlso index < Cells.Count AndAlso Cells(index).PhotoId IsNot Nothing
     End Function
 
 #End Region
@@ -229,6 +260,11 @@ Friend Class CollageCanvas
 
         Dim bounds = GetCanvasBounds()
         If bounds.Width <= 0 OrElse bounds.Height <= 0 Then Return
+
+        If IsMosaic Then
+            PaintMosaic(g, bounds)
+            Return
+        End If
 
         Dim provider = If(ImageProvider, Function(a As PhotoAsset) CType(Nothing, Image))
         CollageRenderer.Render(g, _project, bounds, provider, New RenderOptions With {
@@ -266,6 +302,51 @@ Friend Class CollageCanvas
 
         Dim text = SelectedText
         If text IsNot Nothing Then DrawTextSelection(g, text, bounds)
+    End Sub
+
+    Private Sub PaintMosaic(g As Graphics, bounds As RectangleF)
+        If MosaicPreview IsNot Nothing Then
+            g.InterpolationMode = InterpolationMode.HighQualityBilinear
+            g.PixelOffsetMode = PixelOffsetMode.Half
+            g.DrawImage(MosaicPreview, bounds)
+        Else
+            Using back As New SolidBrush(Color.FromArgb(70, 70, 70))
+                g.FillRectangle(back, bounds)
+            End Using
+            TextRenderer.DrawText(g, If(MosaicPlaceholder, ""), Font, Rectangle.Round(bounds), Color.Silver,
+                                  TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.WordBreak)
+        End If
+
+        Dim state = g.Save()
+        g.SetClip(bounds)
+        For Each layer In _project.Texts
+            TextLayerRenderer.Draw(g, layer, bounds)
+        Next
+        g.Restore(state)
+
+        g.SmoothingMode = SmoothingMode.AntiAlias
+        If _selected >= 0 AndAlso _project.Mosaic.IsGenerated AndAlso _selected < _project.Mosaic.CellCount Then
+            Dim rect = MosaicRenderer.GetCellRect(_project.Mosaic, bounds, _selected)
+            Using outline As New Pen(Color.Black, LogicalToDeviceUnits(3)), pen As New Pen(Color.Gold, LogicalToDeviceUnits(2))
+                g.DrawRectangle(outline, rect)
+                g.DrawRectangle(pen, rect)
+            End Using
+        End If
+        Dim text = SelectedText
+        If text IsNot Nothing Then DrawTextSelection(g, text, bounds)
+    End Sub
+
+    Private Function HitTestMosaic(pt As Point) As Integer
+        If Not IsMosaic OrElse Not _project.Mosaic.IsGenerated Then Return -1
+        Return MosaicRenderer.HitTest(_project.Mosaic, GetCanvasBounds(), pt)
+    End Function
+
+    Private Sub UpdateMosaicToolTip(pt As Point)
+        Dim cell = HitTestMosaic(pt)
+        If cell = _hoverMosaicCell Then Return
+        _hoverMosaicCell = cell
+        Dim asset = If(cell >= 0, _project.FindPhoto(_project.Mosaic.Tiles(cell)), Nothing)
+        _toolTip.SetToolTip(Me, asset?.FileName)
     End Sub
 
     Private Sub DrawEmptyHint(g As Graphics, rect As RectangleF)
@@ -352,6 +433,12 @@ Friend Class CollageCanvas
         End If
         SelectText(Nothing)
 
+        If IsMosaic Then
+            _selected = HitTestMosaic(e.Location)
+            Invalidate()
+            Return
+        End If
+
         Dim index = HitTestCell(e.Location)
         If e.Button = MouseButtons.Right Then
             If index <> _cropCell Then _cropCell = -1
@@ -376,6 +463,7 @@ Friend Class CollageCanvas
 
         If e.Button <> MouseButtons.Left OrElse _drag = DragMode.None Then
             UpdateHoverCursor(e.Location)
+            If IsMosaic Then UpdateMosaicToolTip(e.Location)
             Return
         End If
 
@@ -442,6 +530,7 @@ Friend Class CollageCanvas
             Return
         End If
 
+        If IsMosaic Then Return
         Dim index = If(_cropCell >= 0, _cropCell, HitTestCell(e.Location))
         If Not HasPhoto(index) Then Return
         RaiseChangeStarting("zoom:" & index)
@@ -503,11 +592,15 @@ Friend Class CollageCanvas
     Private Sub OnMenuOpening(sender As Object, e As System.ComponentModel.CancelEventArgs)
         Dim textSelected = SelectedText IsNot Nothing
         Dim has = HasPhoto(_selected)
-        _menuCrop.Visible = Not textSelected
-        _menuResetCrop.Visible = Not textSelected
-        _menuSeparator.Visible = Not textSelected
-        _menuClear.Visible = Not textSelected
+        Dim mosaicCell = Not textSelected AndAlso IsMosaic AndAlso _selected >= 0
+        _menuCrop.Visible = Not textSelected AndAlso Not IsMosaic
+        _menuResetCrop.Visible = Not textSelected AndAlso Not IsMosaic
+        _menuSeparator.Visible = Not textSelected AndAlso Not IsMosaic
+        _menuClear.Visible = Not textSelected AndAlso Not IsMosaic
         _menuDeleteText.Visible = textSelected
+        _menuMosaicNext.Visible = mosaicCell
+        _menuMosaicSelected.Visible = mosaicCell
+        If mosaicCell Then Return
         _menuCrop.Enabled = has
         _menuResetCrop.Enabled = has
         _menuClear.Enabled = has AndAlso AllowClear
@@ -625,6 +718,10 @@ Friend Class CollageCanvas
         If e.Data Is Nothing OrElse _project Is Nothing Then Return
 
         If e.Data.GetDataPresent(PhotoDragFormat) Then
+            If IsMosaic Then
+                e.Effect = DragDropEffects.None
+                Return
+            End If
             Dim target = HitTestCell(PointToClient(New Point(e.X, e.Y)))
             e.Effect = If(target >= 0, DragDropEffects.Move, DragDropEffects.None)
             If target <> _dropTarget Then
@@ -649,7 +746,7 @@ Friend Class CollageCanvas
         If e.Data Is Nothing OrElse _project Is Nothing Then Return
 
         Dim photoId = TryCast(e.Data.GetData(PhotoDragFormat), String)
-        If photoId IsNot Nothing Then
+        If photoId IsNot Nothing AndAlso Not IsMosaic Then
             Dim target = HitTestCell(PointToClient(New Point(e.X, e.Y)))
             If target < 0 Then Return
             RaiseChangeStarting(Nothing)
@@ -667,8 +764,28 @@ Friend Class CollageCanvas
 #End Region
 
     Protected Overrides Sub Dispose(disposing As Boolean)
-        If disposing Then _menu.Dispose()
+        If disposing Then
+            _menu.Dispose()
+            _toolTip.Dispose()
+        End If
         MyBase.Dispose(disposing)
+    End Sub
+End Class
+
+Friend Enum MosaicCellCommandKind
+    NextAlternative
+    UseSelectedPhoto
+End Enum
+
+Friend Class MosaicCellCommandEventArgs
+    Inherits EventArgs
+
+    Public ReadOnly Property Cell As Integer
+    Public ReadOnly Property Kind As MosaicCellCommandKind
+
+    Public Sub New(cell As Integer, kind As MosaicCellCommandKind)
+        Me.Cell = cell
+        Me.Kind = kind
     End Sub
 End Class
 

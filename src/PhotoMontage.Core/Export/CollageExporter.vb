@@ -95,7 +95,7 @@ Public Class CollageExporter
 
                 cancellationToken.ThrowIfCancellationRequested()
                 progress?.Report(New ExportProgress(completed, total, "儲存檔案…"))
-                Save(output, settings)
+                ImageFileWriter.SaveBitmap(output, settings)
             End Using
         Finally
             background?.Dispose()
@@ -149,30 +149,5 @@ Public Class CollageExporter
             Return Nothing
         End Try
     End Function
-
-    ''' <summary>先寫到暫存檔再改名，避免中途失敗留下不完整的檔案或覆蓋掉舊檔。</summary>
-    Private Shared Sub Save(image As Bitmap, settings As ExportSettings)
-        Dim folder = Path.GetDirectoryName(Path.GetFullPath(settings.FilePath))
-        Directory.CreateDirectory(folder)
-        Dim temp = Path.Combine(folder, "." & Guid.NewGuid().ToString("N") & ".tmp")
-        Try
-            If settings.Format = ExportFormat.Png Then
-                image.Save(temp, ImageFormat.Png)
-            Else
-                Dim codec = ImageCodecInfo.GetImageEncoders().First(Function(c) c.FormatID = ImageFormat.Jpeg.Guid)
-                Using parameters As New EncoderParameters(1)
-                    parameters.Param(0) = New EncoderParameter(Encoder.Quality, CLng(Math.Max(1, Math.Min(100, settings.JpegQuality))))
-                    image.Save(temp, codec, parameters)
-                End Using
-            End If
-            File.Move(temp, settings.FilePath, overwrite:=True)
-        Catch
-            Try
-                File.Delete(temp)
-            Catch ex As IOException
-            End Try
-            Throw
-        End Try
-    End Sub
 
 End Class
