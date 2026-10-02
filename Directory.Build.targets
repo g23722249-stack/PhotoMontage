@@ -11,4 +11,12 @@
           Condition="$([System.String]::Copy('%(AllItemsFullPathWithTargetPath.TargetPath)').StartsWith('libvlc'))" />
     </ItemGroup>
   </Target>
+
+  <!-- 發行（dotnet publish / Visual Studio 發行）使用另一份檔案清單 -->
+  <Target Name="PhotoMontageExcludeLibVlcFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+          Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').StartsWith('libvlc'))" />
+    </ItemGroup>
+  </Target>
 </Project>
