@@ -3,6 +3,8 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "PhotoMontage.App", "src\PhotoMontage.App\PhotoMontage.App.vbproj", "{08E7B496-7F46-4E7B-8224-E393F0D2C023}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{A9E03FA2-0812-4BC3-9B17-C604F5004FEB}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{E52DFA58-B326-4BA4-96C9-2640B32D0FEC}"
@@ -10,8 +12,6 @@ EndProject
 Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "PhotoMontage.Core.Tests", "tests\PhotoMontage.Core.Tests\PhotoMontage.Core.Tests.vbproj", "{CFDD34F8-9127-449F-965D-BA50BC92455C}"
 EndProject
 Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "PhotoMontage.WinForms", "src\PhotoMontage.WinForms\PhotoMontage.WinForms.vbproj", "{CFD193ED-C6AC-4684-810E-BF8DDDC3E8A1}"
-EndProject
-Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "PhotoMontage.App", "src\PhotoMontage.App\PhotoMontage.App.vbproj", "{08E7B496-7F46-4E7B-8224-E393F0D2C023}"
 EndProject
 Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "PhotoMontage.Core", "src\PhotoMontage.Core\PhotoMontage.Core.vbproj", "{9EA9C606-DEC2-4881-A2C3-619D5748B33A}"
 EndProject
