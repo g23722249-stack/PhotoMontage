@@ -1,140 +1,191 @@
 # 蒙太奇相片功能規劃
 
-> 狀態：草案 · 2026-10-02
-> 目前 repo 為空，以下為從零開始的規劃；技術選型為預設建議，可依實際平台調整。
+> 狀態：v2 · 2026-10-02
+> 已確認：**桌面程式**、可單獨執行、也能掛進 `iPhoto.Net.vbproj`；不需帳號/雲端；MVP 含文字圖層；不做影片輸出。
 
 ## 1. 功能定義
 
-「蒙太奇相片」涵蓋兩種常見需求，規劃為同一產品的兩個模式：
-
-| 模式 | 說明 | 範例 |
+| 模式 | 說明 | 階段 |
 |------|------|------|
-| **A. 拼貼模式（Collage）** | 把多張照片依版型排列、裁切、疊加成一張作品 | 旅遊回顧 3×3 九宮格、自由拼貼 |
-| **B. 馬賽克模式（Mosaic）** | 用大量小照片當「像素」，拼出一張主圖 | 用 500 張合照拼出新人肖像 |
+| **A. 拼貼（Collage）** | 多張照片依版型排列、裁切成一張作品，可加文字 | MVP |
+| **B. 馬賽克（Mosaic）** | 大量小照片當「像素」，拼出一張主圖 | 第二階段 |
 
-建議 **先做 A（MVP），再做 B**：A 的使用門檻低、需求最普遍，且 B 可重用 A 的匯入、畫布與匯出模組。
+使用流程：`匯入照片 → 選模式/版型 → 自動排版 → 微調（換位、取景、樣式、文字）→ 預覽 → 匯出`
 
-## 2. 使用者流程
+## 2. 「單獨執行 + 可嵌入」的方案
+
+核心想法：**功能全部寫在類別庫（DLL），獨立執行檔只是一層殼**。iPhoto.Net 參考同一個 DLL，就能用和獨立版完全一樣的編輯器。
 
 ```
-匯入照片 → 選擇模式/版型 → 自動排版 → 手動微調 → 預覽 → 匯出/分享
+PhotoMontage.sln
+├─ src/
+│  ├─ PhotoMontage.Core        (VB.NET 類別庫)  資料模型、版型、排版、馬賽克演算法、渲染、匯出
+│  ├─ PhotoMontage.WinForms    (VB.NET 類別庫)  MontageEditorControl (UserControl)、MontageEditorForm、對外 API
+│  └─ PhotoMontage.App         (VB.NET WinExe)  獨立執行的殼：Sub Main → 開啟 MontageEditorForm
+└─ tests/
+   └─ PhotoMontage.Core.Tests  (MSTest)
 ```
 
-1. **匯入**：多選本機照片（拖放 / 檔案選擇），顯示縮圖列。
-2. **選模式**：拼貼 or 馬賽克。
-3. **自動產生**：系統依照片數量與比例給出初稿。
-4. **微調**：拖曳換位、縮放裁切、調整間距/圓角/背景、加文字。
-5. **匯出**：PNG / JPEG，可選解析度（社群 1080px、列印 300dpi）。
+```
+         ┌──────────────────┐        ┌──────────────────────────┐
+         │ PhotoMontage.App │        │ iPhoto.Net (既有 vbproj)  │
+         │   （獨立 .exe）   │        │  選取照片 → 呼叫 API        │
+         └────────┬─────────┘        └────────────┬─────────────┘
+                  │ ProjectReference / DLL 參考     │
+                  └──────────────┬────────────────┘
+                     ┌───────────┴────────────┐
+                     │ PhotoMontage.WinForms  │  UI（編輯器）
+                     └───────────┬────────────┘
+                     ┌───────────┴────────────┐
+                     │ PhotoMontage.Core      │  不依賴任何 UI
+                     └────────────────────────┘
+```
+
+### 2.1 技術選型
+- **語言：VB.NET**，與 iPhoto.Net 一致，方便同一個團隊維護、除錯時可直接逐步進入。
+- **UI：WinForms**，提供 `UserControl`（可塞進宿主自己的視窗）和 `Form`（彈出式對話框）兩種用法。
+- **目標框架：多目標 `net48;net8.0-windows`**，不論 iPhoto.Net 是 .NET Framework 還是 .NET 8 都能參考。確認宿主版本後可只留一個。
+- **繪圖：System.Drawing（GDI+）**。拼貼足夠；馬賽克用 `LockBits` 直接讀寫像素，並用 `Parallel.For` 平行計算。
+- **Core 不參考 WinForms**，之後若要換 WPF UI 或命令列批次處理，演算法不用動。
+
+### 2.2 對外 API（給 iPhoto.Net 呼叫）
+
+```vb
+' 用法一：彈出對話框（最簡單）
+Dim opts As New MontageOptions With {
+    .InitialPhotos = selectedFilePaths,      ' iPhoto.Net 目前選取的照片
+    .DefaultExportFolder = albumFolder,
+    .Mode = MontageMode.Collage
+}
+Dim result As MontageResult = MontageEditor.ShowDialog(Me, opts)
+If result.Success Then
+    ' 例如把作品加回相簿
+    AddPhotoToAlbum(result.OutputPath)
+End If
+
+' 用法二：嵌入宿主視窗
+Dim editor As New MontageEditorControl() With {.Dock = DockStyle.Fill}
+editor.LoadPhotos(selectedFilePaths)
+AddHandler editor.Exported, Sub(s, e) AddPhotoToAlbum(e.OutputPath)
+panelHost.Controls.Add(editor)
+
+' 用法三：不開 UI，直接產生（批次 / 自動化）
+Dim bmp As Bitmap = MontageRenderer.Render(project, New Size(3000, 3000))
+```
+
+- `MontageEditor`、`MontageOptions`、`MontageResult`、`MontageEditorControl`、`Exported` 事件就是**唯一的公開介面**，其餘標成 `Friend`，以後改內部實作不會影響 iPhoto.Net。
+- 獨立版 `PhotoMontage.App` 也是呼叫 `MontageEditor.ShowDialog(Nothing, opts)`，兩邊行為一致。
+
+### 2.3 掛進 iPhoto.Net 的方式（擇一）
+1. **ProjectReference**（同一個方案一起開發時）：把三個專案加進 iPhoto.Net 的 .sln，在 `iPhoto.Net.vbproj` 加
+   `<ProjectReference Include="..\..\PhotoMontage\src\PhotoMontage.WinForms\PhotoMontage.WinForms.vbproj" />`
+2. **DLL 參考**：直接參考建置好的 `PhotoMontage.Core.dll`、`PhotoMontage.WinForms.dll`。
+3. **本機 NuGet 套件**：`dotnet pack` 後放在本機資料夾當套件來源，版本管理最乾淨。
+
+在 iPhoto.Net 的照片清單右鍵選單或工具列加「建立蒙太奇…」，呼叫用法一即可。
 
 ## 3. 功能清單
 
 ### 3.1 拼貼模式（MVP）
-- [ ] 預設版型：2/3/4/6/9 格、橫幅、直幅、不規則格
-- [ ] 照片自動填滿格子（object-fit: cover），可在格內平移/縮放取景
+- [ ] 匯入：拖放、檔案選擇、或由宿主傳入路徑清單
+- [ ] 預設版型：2/3/4/6/9 格、橫幅、直幅、不規則格；照片數不固定時自動排版
+- [ ] 照片自動填滿格子（cover），可在格內拖曳取景、滾輪縮放
 - [ ] 拖曳交換照片位置
-- [ ] 外框：間距、圓角、背景色/背景圖
-- [ ] 畫布比例：1:1、4:5、9:16、16:9、A4
-- [ ] 文字圖層（字型、顏色、陰影）
-- [ ] 復原 / 重做
-- [ ] 匯出 PNG/JPEG
+- [ ] 樣式：間距、圓角、背景色/背景圖
+- [ ] 畫布比例：1:1、4:5、9:16、16:9、A4、自訂
+- [ ] **文字圖層**：字型、大小、顏色、粗體/斜體、外框、陰影、對齊、拖曳定位與旋轉
+- [ ] 復原 / 重做（Ctrl+Z / Ctrl+Y）
+- [ ] 匯出 PNG / JPEG（可選品質）、解析度預設（1080px、4K、列印 300dpi）
 
 ### 3.2 馬賽克模式（第二階段）
-- [ ] 選擇主圖 + 素材照片庫（建議 ≥ 100 張）
-- [ ] 參數：格子數（如 40×40 ~ 120×120）、素材重複次數上限、主圖疊色強度
-- [ ] 演算法（見 §5）
-- [ ] 低解析度即時預覽 → 高解析度背景算圖
+- [ ] 選主圖 + 素材照片（資料夾或宿主傳入，建議 ≥ 100 張）
+- [ ] 參數：格子數（40×40～120×120）、素材重複上限、主圖疊色強度
+- [ ] 低解析度即時預覽 → 背景執行緒高解析算圖，有進度條與取消
 - [ ] 點擊格子可查看/替換該格素材
+- [ ] 文字圖層同樣可用
 
-### 3.3 進階（Backlog）
-- 自由拼貼（任意旋轉、疊放、去背）
-- 濾鏡與色調統一
-- 專案儲存與再編輯
-- 人臉偵測，裁切時避免切到臉
-- 雲端分享連結
+### 3.3 Backlog
+- 專案存檔（`.pmontage`，JSON + 照片相對路徑）以便再編輯
+- 自由拼貼（任意旋轉、疊放）
+- 濾鏡 / 色調統一
+- 人臉偵測，裁切時避開臉部
 
-## 4. 技術架構（建議：Web 前端為主）
+## 4. 資料模型（Core）
 
-```
-┌────────────── UI (React + TypeScript) ──────────────┐
-│ ImportPanel │ TemplatePicker │ Editor │ ExportDialog │
-└──────────────────────┬──────────────────────────────┘
-                       │ 狀態 (Zustand：project / history)
-┌──────────────────────┴──────────────────────────────┐
-│ core/                                                 │
-│  ├─ layout/      版型定義與自動排版                    │
-│  ├─ render/      Canvas 繪製（預覽 & 匯出共用）         │
-│  ├─ mosaic/      色彩分析、配對演算法                   │
-│  └─ image/       解碼、縮圖、EXIF 方向修正               │
-└──────────────────────┬──────────────────────────────┘
-                       │
-                Web Worker / OffscreenCanvas（重運算）
-```
+```vb
+Public Class MontageProject
+    Public Property Mode As MontageMode            ' Collage / Mosaic
+    Public Property CanvasSize As Size
+    Public Property Background As BackgroundStyle
+    Public Property Photos As List(Of PhotoAsset)   ' 原圖路徑 + 縮圖 + 平均色
+    Public Property Collage As CollageSettings      ' TemplateId, Gap, Radius, Cells
+    Public Property Mosaic As MosaicSettings        ' TargetPhotoId, Cols, Rows, Tint, MaxRepeat
+    Public Property Texts As List(Of TextLayer)
+End Class
 
-- **全部在瀏覽器端處理**：照片不需上傳，隱私好、免伺服器成本。
-- **Canvas 2D** 足以應付拼貼；馬賽克大圖匯出用 OffscreenCanvas + Worker 避免卡 UI。
-- **資料模型**（序列化成 JSON 即可存檔）：
+Public Class Cell
+    Public Property Rect As RectangleF   ' 0~1 相對座標，與輸出解析度無關
+    Public Property PhotoId As String
+    Public Property Crop As CropInfo     ' OffsetX, OffsetY, Scale
+End Class
 
-```ts
-interface Project {
-  id: string;
-  mode: 'collage' | 'mosaic';
-  canvas: { width: number; height: number; background: string };
-  photos: PhotoAsset[];          // 原圖參照 + 縮圖 + 平均色
-  collage?: { templateId: string; gap: number; radius: number; cells: Cell[] };
-  mosaic?: { targetPhotoId: string; cols: number; rows: number; tint: number; maxRepeat: number; tiles: string[] };
-  texts: TextLayer[];
-}
-
-interface Cell {
-  rect: { x: number; y: number; w: number; h: number }; // 0~1 相對座標
-  photoId?: string;
-  crop: { offsetX: number; offsetY: number; scale: number };
-}
+Public Class TextLayer
+    Public Property Text As String
+    Public Property FontFamily As String
+    Public Property FontSize As Single   ' 以畫布高度的比例儲存，縮放匯出時大小一致
+    Public Property Color As Color
+    Public Property Outline As OutlineStyle
+    Public Property Shadow As ShadowStyle
+    Public Property Position As PointF   ' 0~1 相對座標
+    Public Property Rotation As Single
+End Class
 ```
 
-> 若目標是手機 App：可改用 Flutter / React Native，`core/` 的演算法與資料模型概念不變。
+- **預覽與匯出共用同一個 `MontageRenderer`**，只差輸出尺寸，所見即所得。
+- 復原/重做以「命令模式」實作（每個編輯動作一個 `IEditCommand`，有 `Execute` / `Undo`）。
 
 ## 5. 關鍵演算法
 
 ### 5.1 拼貼自動排版
-- 版型以 **0~1 相對座標** 定義格子，與輸出解析度無關。
-- 照片分配：依長寬比與格子長寬比做配對（橫圖進橫格），差值最小者優先，降低裁切損失。
-- 「自動版型」：照片數 N 時，用 justified layout（類似 Google Photos 列排版）計算列高，使每列寬度剛好填滿。
+- 依照片長寬比分配格子（橫圖進橫格），選總裁切損失最小的分配方式。
+- 照片數不符合預設版型時，用 justified layout（類似 Google 相簿逐列排版）算出每列高度，使每列剛好填滿寬度。
 
 ### 5.2 馬賽克配對
-1. 素材預處理：每張縮成小圖（如 64×64），計算平均色（轉 **CIELAB** 色彩空間，比 RGB 更符合人眼）。進階可存 2×2 子區塊色以保留細節。
-2. 主圖切成 cols × rows 格，計算每格平均色。
-3. 配對：每格找 Lab 距離最近的素材；用 **k-d tree** 加速最近鄰查詢。
+1. 素材預處理：縮成 64×64，計算平均色並轉 **CIELAB**（比 RGB 更接近人眼感受）；進階可存 2×2 子區塊色保留細節。
+2. 主圖切成 Cols × Rows，計算每格平均色。
+3. 用 **k-d tree** 找 Lab 距離最近的素材。
 4. 避免重複：限制每張素材使用次數、相鄰格不可相同。
-5. 疊色：輸出時每格以 `tint`（0~30%）疊上主圖原色，大幅提升遠看辨識度。
+5. 輸出時每格疊上 0～30% 的主圖原色，遠看更容易辨識。
 
-## 6. 效能與限制
-- 匯入時立即產生縮圖（≤ 512px）供編輯使用，**只有匯出時才讀原圖**。
-- 修正 EXIF 方向（手機直拍照片常見問題），並支援 HEIC（`heic2any` 或提示使用者轉檔）。
-- 瀏覽器 Canvas 尺寸上限（Safari 約 16.7M 像素）：大圖匯出需分塊繪製或提示上限。
-- 馬賽克 100×100 格 × 每格 100px = 10000×10000，需分塊輸出。
+## 6. 效能與注意事項
+- 匯入時在背景產生縮圖（≤ 512px）供編輯用，**只有匯出才讀原圖**；縮圖快取在 `%LOCALAPPDATA%\PhotoMontage\cache`。
+- 讀圖後依 EXIF Orientation 旋轉（手機直拍照片常見問題）。
+- 讀檔用 `Image.FromStream` 並複製成新 Bitmap，避免 GDI+ 鎖住原始檔（宿主可能同時要移動或刪除該檔）。
+- 所有 `Bitmap` / `Graphics` 都要 `Using` 釋放，防止長時間在宿主中執行時記憶體洩漏。
+- HEIC：GDI+ 不支援。先用 WIC（需安裝 Windows「HEIF 影像延伸模組」）嘗試，失敗時提示使用者；若一定要支援可再評估 Magick.NET。
+- GDI+ 單張 Bitmap 實際上限約 2～4 億像素（受記憶體影響），馬賽克超大圖需**分塊渲染**後再逐塊寫入檔案。
+- 高 DPI：表單設定 `AutoScaleMode.Dpi`，畫布繪製以實際像素計算。
+- 長時間工作用 `Async`/`Await` + `IProgress(Of T)` + `CancellationToken`，不卡住宿主 UI 執行緒。
 
 ## 7. 開發里程碑
 
 | 階段 | 內容 | 預估 |
 |------|------|------|
-| M0 | 專案骨架：Vite + React + TS、Lint、測試（Vitest）、CI | 0.5 週 |
-| M1 | 照片匯入、縮圖、EXIF 修正 | 1 週 |
-| M2 | 拼貼：版型系統、Canvas 渲染、拖曳換位、格內取景 | 2 週 |
-| M3 | 樣式（間距/圓角/背景）、文字圖層、復原重做 | 1 週 |
-| M4 | 匯出（多解析度）、行動版 RWD → **MVP 發布** | 1 週 |
+| M0 | 方案骨架：Core / WinForms / App / Tests 四個專案、多目標框架、建置腳本 | 0.5 週 |
+| M1 | 照片匯入、縮圖快取、EXIF 修正、對外 API 雛形（`MontageEditor.ShowDialog`） | 1 週 |
+| M2 | 拼貼：版型系統、渲染器、拖曳換位、格內取景 | 2 週 |
+| M3 | 樣式、**文字圖層**、復原重做 | 1.5 週 |
+| M4 | 匯出、**掛進 iPhoto.Net 實測** → **MVP** | 1 週 |
 | M5 | 馬賽克：色彩分析、k-d tree 配對、預覽 | 2 週 |
-| M6 | 馬賽克高解析匯出（Worker、分塊）、重複控制、疊色 | 1 週 |
-| M7 | Backlog 項目依回饋排序 | — |
+| M6 | 馬賽克高解析分塊匯出、進度/取消、重複控制、疊色 | 1 週 |
 
 ## 8. 測試策略
-- **單元測試**：版型座標計算、照片-格子配對、Lab 轉換、k-d tree 最近鄰。
-- **快照測試**：固定輸入照片 → 比對渲染輸出像素差異。
-- **E2E（Playwright）**：匯入 → 選版型 → 匯出 完整流程。
-- **效能基準**：500 張素材 × 100×100 馬賽克的算圖時間與記憶體。
+- **單元測試（MSTest）**：版型座標、照片-格子配對、Lab 轉換、k-d tree、命令模式的 Undo/Redo。
+- **渲染測試**：固定輸入 → 比對輸出像素差異（容許少量誤差）。
+- **整合測試**：建一個最小 WinForms 宿主，以 API 開啟編輯器並匯出，模擬 iPhoto.Net 的用法。
+- **效能基準**：500 張素材 × 100×100 格馬賽克的算圖時間與記憶體峰值。
 
-## 9. 待決定事項
-1. 目標平台：Web / 手機 App / 桌面？（影響技術選型）
-2. 是否需要帳號與雲端儲存專案？
-3. MVP 是否需要文字圖層，或延後？
-4. 是否要支援影片輸出（照片輪播式蒙太奇）？
+## 9. 待確認（影響 M0）
+1. `iPhoto.Net.vbproj` 的目標框架：.NET Framework 4.x 還是 .NET 6/8？（決定是否保留多目標）
+2. iPhoto.Net 的 UI 是 WinForms 還是 WPF？（若是 WPF，改用 `WindowsFormsHost` 嵌入，或 UI 層改做 WPF 版）
+3. 是 SDK 樣式的 vbproj（`<Project Sdk="...">`）還是舊式格式？（影響參考的寫法）
