@@ -1,4 +1,4 @@
-''' <summary>自動散佈與整齊排列。</summary>
+''' <summary>隨機散佈（原本的演算法）與套用排列。</summary>
 Public Module FreeArrange
 
     ''' <summary>一張照片排好的位置（畫布比例）。</summary>
@@ -58,25 +58,25 @@ Public Module FreeArrange
     End Function
 
     ''' <summary>
-    ''' 把排版結果套用到照片上（依清單順序）；隨性時同時打散圖層順序。
+    ''' 依設定的排列方式把照片重新擺放（依清單順序對應錨點），並依排列方式調整圖層順序。
     ''' </summary>
     Public Sub Apply(settings As FreeLayoutSettings, canvasAspect As Double, seed As Integer)
         Dim items = settings.Items
+        If items.Count = 0 Then Return
         ' 寬度以畫布寬度為準，外框比例要用畫布的實際寬高換算
         Dim aspects = items.Select(Function(i) OuterAspect(i)).ToList()
-        Dim placements = Arrange(aspects, canvasAspect, settings.Looseness, seed)
+        Dim options As New ArrangeOptions With {
+            .Style = settings.Style, .Looseness = settings.Looseness, .Overlap = settings.Overlap, .Clockwise = settings.Clockwise}
+        Dim result = FreeArrangeStyles.Arrange(aspects, canvasAspect, options, seed)
         For i = 0 To items.Count - 1
-            items(i).CenterX = placements(i).CenterX
-            items(i).CenterY = placements(i).CenterY
-            items(i).Width = placements(i).Width
-            items(i).Rotation = placements(i).Rotation
+            items(i).CenterX = result.Placements(i).CenterX
+            items(i).CenterY = result.Placements(i).CenterY
+            items(i).Width = result.Placements(i).Width
+            items(i).Rotation = result.Placements(i).Rotation
         Next
-        If settings.Looseness > 0 AndAlso items.Count > 1 Then
-            Dim rng As New Random(seed Xor &H5A5A)
-            Dim shuffled = items.OrderBy(Function(x) rng.Next()).ToList()
-            items.Clear()
-            items.AddRange(shuffled)
-        End If
+        Dim ordered = result.ZOrder.Select(Function(i) items(i)).ToList()
+        items.Clear()
+        items.AddRange(ordered)
     End Sub
 
 End Module

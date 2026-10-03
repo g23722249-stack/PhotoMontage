@@ -46,13 +46,17 @@ Public Class MontageEditorControl
 
     Private ReadOnly _strip As PhotoStrip
     ''' <summary>版型清單；第 0 項為「自動排版」，其後為內建版型（與 <see cref="_templates"/> 對應）。</summary>
-    Private ReadOnly _templateList As Aqua.ItemListBox
+    Private ReadOnly _templateList As TemplateGallery
+    Private ReadOnly _resetSizesButton As PillButton
     Private ReadOnly _templates As New List(Of CollageTemplate)
     ''' <summary>畫布比例，順序與 <see cref="CanvasPresets.All"/> 相同。</summary>
     Private ReadOnly _ratioCombo As Aqua.DropDownList
     Private ReadOnly _canvas As CollageCanvas
     Private ReadOnly _exportButton As PillButton
     Private ReadOnly _printButton As PillButton
+
+    ''' <summary>裁切視窗中照片解碼的長邊（足夠在大螢幕上精確選取範圍）。</summary>
+    Private Const CropDecodeEdge As Integer = 1800
     Private ReadOnly _stylePanel As StylePanel
     Private ReadOnly _textPanel As TextPanel
     Private ReadOnly _tabs As Aqua.TabControl
@@ -124,11 +128,12 @@ Public Class MontageEditorControl
 
         _templates.Add(New CollageTemplate(CollageTemplates.AutoId, "自動排版（依照片）", Array.Empty(Of RectangleF)()))
         _templates.AddRange(CollageTemplates.BuiltIn)
-        _templateList = New Aqua.ItemListBox() With {.Dock = DockStyle.Fill}
-        For Each t In _templates
-            _templateList.AddItem(t.Id, t.Name)
-        Next
+        _templateList = New TemplateGallery() With {.Dock = DockStyle.Fill}
+        _templateList.SetTemplates(_templates)
         AddHandler _templateList.SelectedChanged, AddressOf OnTemplateChanged
+
+        _resetSizesButton = New PillButton() With {.Text = "重設格子大小", .Dock = DockStyle.Bottom, .Enabled = False}
+        AddHandler _resetSizesButton.Click, Sub(s, e) ResetCellSizes()
 
         Dim autoAssign As New PillButton() With {.Text = "重新自動分配", .Dock = DockStyle.Bottom}
         AddHandler autoAssign.Click, Sub(s, e)
@@ -148,6 +153,12 @@ Public Class MontageEditorControl
                                                   _textPanel.FocusText()
                                               End Sub
         AddHandler _canvas.FilesDropped, Sub(s, e) AddPhotos(e.Paths)
+        AddHandler _canvas.CropRequested, AddressOf OnCropRequested
+        AddHandler _canvas.CellsResized, Sub(s, e)
+                                             _project.Collage.CellsAdjusted = True
+                                             OnCellsChanged()
+                                         End Sub
+        AddHandler _canvas.ResetCellSizesRequested, Sub(s, e) ResetCellSizes()
 
         _exportButton = New PillButton() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Enabled = False}
         AddHandler _exportButton.Click, Sub(s, e) ShowExportDialog()
@@ -164,6 +175,7 @@ Public Class MontageEditorControl
         layoutTab.Controls.Add(templateLabel)
         layoutTab.Controls.Add(_ratioCombo)
         layoutTab.Controls.Add(ratioLabel)
+        layoutTab.Controls.Add(PillButton.Docked(_resetSizesButton, DockStyle.Bottom))
         layoutTab.Controls.Add(PillButton.Docked(autoAssign, DockStyle.Bottom))
 
         ' 「樣式」頁
@@ -206,7 +218,7 @@ Public Class MontageEditorControl
         _freePanel = New FreePanel() With {.Dock = DockStyle.Fill}
         AddHandler _freePanel.ChangeStarting, Sub(s, e) RecordUndo(e.Key)
         AddHandler _freePanel.ItemsChanged, Sub(s, e) OnFreeItemsChanged()
-        AddHandler _freePanel.ArrangeRequested, Sub(s, e) ArrangeFree(e.Tidy)
+        AddHandler _freePanel.ArrangeRequested, Sub(s, e) ArrangeFree()
         AddHandler _freePanel.CommandRequested, Sub(s, e) _canvas.ExecuteFreeCommand(e.Command)
         AddHandler _canvas.FreeSelectionChanged, Sub(s, e) _freePanel.SetSelection(_canvas.SelectedFreeItems)
         AddHandler _canvas.FreeItemsChanged, Sub(s, e) OnFreeItemsChanged()
@@ -251,8 +263,9 @@ Public Class MontageEditorControl
         _help.SetHelp(HelpTexts.AddFolder, addFolderButton)
         _help.SetHelp(HelpTexts.CancelImport, cancel)
         _help.SetHelp(HelpTexts.CanvasRatio, ratioLabel, _ratioCombo)
-        _help.SetHelp(HelpTexts.Templates, templateLabel, _templateList)
+        _help.SetHelp(HelpTexts.Templates, templateLabel)
         _help.SetHelp(HelpTexts.AutoAssign, autoAssign)
+        _help.SetHelp(HelpTexts.ResetCellSizes, _resetSizesButton)
         _help.SetHelp(HelpTexts.Export, _exportButton)
         _help.SetHelp(HelpTexts.Print, _printButton)
 
@@ -300,8 +313,8 @@ Public Class MontageEditorControl
         _suppressTemplateEvents = True
         Dim preset = CanvasPresets.Find(_project.CanvasSize)
         If preset IsNot Nothing Then _ratioCombo.SelectedIndex = CanvasPresets.All.ToList().IndexOf(preset)
-        Dim index = _templates.FindIndex(Function(t) t.Id = _project.Collage.TemplateId)
-        If index >= 0 Then _templateList.SelectedIndex = index
+        _templateList.CanvasAspect = _project.CanvasAspect
+        _templateList.SelectedId = _project.Collage.TemplateId
         _suppressTemplateEvents = False
     End Sub
 
@@ -508,9 +521,8 @@ Public Class MontageEditorControl
 
     Private Sub OnTemplateChanged(sender As Object, e As EventArgs)
         If _suppressTemplateEvents Then Return
-        Dim index = _templateList.SelectedIndex
-        If index < 0 OrElse index >= _templates.Count Then Return
-        Dim template = _templates(index)
+        Dim template = _templates.Find(Function(t) t.Id = _templateList.SelectedId)
+        If template Is Nothing Then Return
         If template.Id = _project.Collage.TemplateId Then Return
 
         RecordUndo()
@@ -533,7 +545,7 @@ Public Class MontageEditorControl
             ApplyLayout(reassign:=True)
         Else
             For Each c In _project.Collage.Cells
-                c.Crop = New CropInfo()
+                c.Crop = New CropInfo With {.Rotation = c.Crop.Rotation, .FlipHorizontal = c.Crop.FlipHorizontal}
             Next
             _canvas.ResetInteraction()
             OnCellsChanged()
@@ -550,11 +562,31 @@ Public Class MontageEditorControl
     ''' 所以把新的位置順序寫回照片清單，再依新順序重排。
     ''' </summary>
     Private Sub OnCanvasCellsChanged()
-        If IsAutoLayout AndAlso SyncPhotoOrderFromCells() Then
+        ' 自動排版換位後依新順序重排；調整過格子大小時保留大小，只換照片
+        If IsAutoLayout AndAlso SyncPhotoOrderFromCells() AndAlso Not _project.Collage.CellsAdjusted Then
             ApplyLayout(reassign:=True)
         Else
             OnCellsChanged()
         End If
+    End Sub
+
+    ''' <summary>格子大小恢復為版型（或自動排版）原本的樣子，照片與取景不變。</summary>
+    Private Sub ResetCellSizes()
+        Dim settings = _project.Collage
+        If Not settings.CellsAdjusted Then Return
+        RecordUndo()
+        If IsAutoLayout Then
+            ApplyLayout(reassign:=True)
+            Return
+        End If
+        Dim template = CollageTemplates.Find(settings.TemplateId)
+        If template IsNot Nothing AndAlso template.CellCount = settings.Cells.Count Then
+            For i = 0 To settings.Cells.Count - 1
+                settings.Cells(i).Bounds = template.Cells(i)
+            Next
+        End If
+        settings.CellsAdjusted = False
+        OnCellsChanged()
     End Sub
 
     ''' <summary>
@@ -586,6 +618,7 @@ Public Class MontageEditorControl
     Private Sub ApplyLayout(reassign As Boolean)
         _layoutTimer.Stop()
         Dim settings = _project.Collage
+        If IsAutoLayout OrElse reassign Then settings.CellsAdjusted = False
 
         If IsAutoLayout Then
             ' 保留每張照片的取景（相對值，格子形狀改變後仍然有效）
@@ -635,6 +668,8 @@ Public Class MontageEditorControl
             _exportButton.Enabled = collageUsed.Count > 0
         End If
         _printButton.Enabled = _exportButton.Enabled
+        _resetSizesButton.Enabled = Not IsMosaicMode AndAlso Not IsFreeMode AndAlso _project.Collage.CellsAdjusted
+        _templateList.CanvasAspect = _project.CanvasAspect
         _canvas.Invalidate()
     End Sub
 
@@ -786,16 +821,14 @@ Public Class MontageEditorControl
             .Shadow = If(template?.Shadow, True)}
     End Function
 
-    Private Sub ArrangeFree(tidy As Boolean)
+    ''' <summary>依目前的排列方式（螺旋、圓環…）重新擺放所有照片；每次使用不同的亂數。</summary>
+    Private Sub ArrangeFree()
         If _project.Free.Items.Count = 0 Then
             AutoPlaceNewFreePhotos()
             Return
         End If
         RecordUndo()
-        Dim saved = _project.Free.Looseness
-        If tidy Then _project.Free.Looseness = 0
         FreeArrange.Apply(_project.Free, _project.CanvasAspect, NextSeed())
-        _project.Free.Looseness = saved
         OnFreeItemsChanged()
     End Sub
 
@@ -807,6 +840,53 @@ Public Class MontageEditorControl
     Private Sub OnFreeItemsChanged()
         _freePanel.SetSelection(_canvas.SelectedFreeItems)
         OnCellsChanged()
+    End Sub
+
+#End Region
+
+#Region "裁切"
+
+    ''' <summary>開啟裁切視窗；確定後套用到格子或自由拼貼的照片（可復原）。</summary>
+    Private Sub OnCropRequested(sender As Object, e As CropRequestedEventArgs)
+        Dim asset As PhotoAsset
+        Dim crop As CropInfo
+        Dim fixedAspect = 0.0
+        Dim currentAspect = 0.0
+        Dim item As FreeItem = Nothing
+        Dim cell As Cell = Nothing
+
+        If e.FreeItemId IsNot Nothing Then
+            item = _project.Free.Find(e.FreeItemId)
+            If item Is Nothing Then Return
+            asset = _project.FindPhoto(item.PhotoId)
+            crop = item.Crop
+            currentAspect = item.InnerAspect
+        Else
+            If e.CellIndex < 0 OrElse e.CellIndex >= _project.Collage.Cells.Count Then Return
+            cell = _project.Collage.Cells(e.CellIndex)
+            asset = _project.FindPhoto(cell.PhotoId)
+            crop = cell.Crop
+            Dim canvas As New RectangleF(0, 0, _project.CanvasSize.Width, _project.CanvasSize.Height)
+            Dim rect = CellGeometry.GetCellRect(cell.Bounds, canvas, _project.Collage.Gap)
+            If rect.Width < 1 OrElse rect.Height < 1 Then Return
+            fixedAspect = rect.Width / rect.Height
+        End If
+        If asset Is Nothing OrElse asset.Status <> PhotoStatus.Ready Then Return
+
+        Dim path = asset.FilePath
+        Using dlg As New CropDialog(Function() BitmapConversion.ToBitmap(_importer.DecodeFile(path, CropDecodeEdge)),
+                                    crop, fixedAspect, currentAspect, asset.PixelSize, asset.FileName, _options.AquaColor)
+            If dlg.ShowDialog(Me) <> DialogResult.OK OrElse dlg.ResultCrop Is Nothing Then Return
+            RecordUndo()
+            If item IsNot Nothing Then
+                item.Crop = dlg.ResultCrop
+                item.InnerAspect = CSng(Math.Max(0.1, Math.Min(10, dlg.ResultAspect)))
+                OnFreeItemsChanged()
+            Else
+                cell.Crop = dlg.ResultCrop
+                OnCellsChanged()
+            End If
+        End Using
     End Sub
 
 #End Region

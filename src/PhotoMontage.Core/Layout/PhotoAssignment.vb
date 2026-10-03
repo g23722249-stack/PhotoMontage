@@ -95,13 +95,14 @@ Public Module PhotoAssignment
         Return result
     End Function
 
-    ''' <summary>交換兩格的照片，並重設兩格的取景。</summary>
+    ''' <summary>交換兩格的照片並重設取景；照片的旋轉與翻轉跟著照片走。</summary>
     Public Sub Swap(a As Cell, b As Cell)
         Dim id = a.PhotoId
         a.PhotoId = b.PhotoId
         b.PhotoId = id
-        a.Crop = New CropInfo()
-        b.Crop = New CropInfo()
+        Dim oldA = a.Crop
+        a.Crop = New CropInfo With {.Rotation = b.Crop.Rotation, .FlipHorizontal = b.Crop.FlipHorizontal}
+        b.Crop = New CropInfo With {.Rotation = oldA.Rotation, .FlipHorizontal = oldA.FlipHorizontal}
     End Sub
 
     ''' <summary>把照片放進指定格子；照片原本在別格時兩格互換。</summary>

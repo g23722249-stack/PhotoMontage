@@ -63,9 +63,8 @@ Public Module FreeRenderer
                     g.FillRectangle(brush, inner)
                 End Using
             Else
-                Dim src = CropMath.GetSourceRect(New SizeF(image.Width, image.Height), inner.Size, item.Crop)
-                Dim dest = {New PointF(inner.Left, inner.Top), New PointF(inner.Right, inner.Top), New PointF(inner.Left, inner.Bottom)}
-                g.DrawImage(image, dest, src, GraphicsUnit.Pixel, attrs)
+                Dim src = CropMath.GetOrientedSourceRect(New SizeF(image.Width, image.Height), inner.Size, item.Crop)
+                PhotoOrientation.Draw(g, image, inner, src, item.Crop, attrs)
             End If
         Finally
             g.Restore(state)

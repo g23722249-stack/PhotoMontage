@@ -16,12 +16,16 @@ Public NotInheritable Class DesignState
     Public Property Gap As Single
     Public Property CornerRadius As Single
     Public Property Cells As New List(Of CellState)
+    Public Property CellsAdjusted As Boolean
     Public Property Texts As New List(Of TextState)
     Public Property Mosaic As New MosaicState
     Public Property Free As New FreeState
 
     Public NotInheritable Class FreeState
         Public Property Looseness As Single = 0.5F
+        Public Property Style As Integer
+        Public Property Overlap As Boolean = True
+        Public Property Clockwise As Boolean = True
         Public Property Items As New List(Of FreeItemState)
     End Class
 
@@ -39,6 +43,8 @@ Public NotInheritable Class DesignState
         Public Property OffsetX As Single
         Public Property OffsetY As Single
         Public Property Scale As Single
+        Public Property PhotoRotation As Integer
+        Public Property Flip As Boolean
     End Class
 
     ''' <summary>馬賽克設定；格子結果以「素材 Id 表＋索引」儲存，避免每格重複完整 Id。</summary>
@@ -62,6 +68,8 @@ Public NotInheritable Class DesignState
         Public Property OffsetX As Single
         Public Property OffsetY As Single
         Public Property Scale As Single
+        Public Property Rotation As Integer
+        Public Property Flip As Boolean
     End Class
 
     Public NotInheritable Class TextState
@@ -111,10 +119,12 @@ Public NotInheritable Class DesignState
                 .TileIds = ids, .TileIndexes = indexes},
             .Free = New FreeState With {
                 .Looseness = project.Free.Looseness,
+                .Style = CInt(project.Free.Style), .Overlap = project.Free.Overlap, .Clockwise = project.Free.Clockwise,
                 .Items = project.Free.Items.Select(Function(i) New FreeItemState With {
                     .Id = i.Id, .PhotoId = i.PhotoId, .CenterX = i.CenterX, .CenterY = i.CenterY, .Width = i.Width,
                     .InnerAspect = i.InnerAspect, .Rotation = i.Rotation, .Frame = CInt(i.Frame), .FrameWidth = i.FrameWidth,
-                    .Shadow = i.Shadow, .OffsetX = i.Crop.OffsetX, .OffsetY = i.Crop.OffsetY, .Scale = i.Crop.Scale}).ToList()},
+                    .Shadow = i.Shadow, .OffsetX = i.Crop.OffsetX, .OffsetY = i.Crop.OffsetY, .Scale = i.Crop.Scale,
+                    .PhotoRotation = i.Crop.Rotation, .Flip = i.Crop.FlipHorizontal}).ToList()},
             .CanvasWidth = project.CanvasSize.Width,
             .CanvasHeight = project.CanvasSize.Height,
             .BackgroundArgb = project.BackgroundColor.ToArgb(),
@@ -122,9 +132,11 @@ Public NotInheritable Class DesignState
             .TemplateId = project.Collage.TemplateId,
             .Gap = project.Collage.Gap,
             .CornerRadius = project.Collage.CornerRadius,
+            .CellsAdjusted = project.Collage.CellsAdjusted,
             .Cells = project.Collage.Cells.Select(Function(c) New CellState With {
                 .X = c.Bounds.X, .Y = c.Bounds.Y, .Width = c.Bounds.Width, .Height = c.Bounds.Height,
-                .PhotoId = c.PhotoId, .OffsetX = c.Crop.OffsetX, .OffsetY = c.Crop.OffsetY, .Scale = c.Crop.Scale}).ToList(),
+                .PhotoId = c.PhotoId, .OffsetX = c.Crop.OffsetX, .OffsetY = c.Crop.OffsetY, .Scale = c.Crop.Scale,
+                .Rotation = c.Crop.Rotation, .Flip = c.Crop.FlipHorizontal}).ToList(),
             .Texts = project.Texts.Select(Function(t) New TextState With {
                 .Id = t.Id, .Text = t.Text, .FontFamily = t.FontFamily, .FontSize = t.FontSize,
                 .Bold = t.Bold, .Italic = t.Italic, .ColorArgb = t.Color.ToArgb(), .Alignment = CInt(t.Alignment),
@@ -141,11 +153,13 @@ Public NotInheritable Class DesignState
         Dim fs = If(Free, New FreeState())
         project.Free = New FreeLayoutSettings With {
             .Looseness = fs.Looseness,
+            .Style = CType(fs.Style, ArrangeStyle), .Overlap = fs.Overlap, .Clockwise = fs.Clockwise,
             .Items = fs.Items.Select(Function(i) New FreeItem With {
                 .Id = i.Id, .PhotoId = i.PhotoId, .CenterX = i.CenterX, .CenterY = i.CenterY, .Width = i.Width,
                 .InnerAspect = If(i.InnerAspect > 0, i.InnerAspect, 1.5F), .Rotation = i.Rotation, .Frame = CType(i.Frame, FrameStyle),
                 .FrameWidth = i.FrameWidth, .Shadow = i.Shadow,
-                .Crop = New CropInfo With {.OffsetX = i.OffsetX, .OffsetY = i.OffsetY, .Scale = If(i.Scale > 0, i.Scale, 1.0F)}}).ToList()}
+                .Crop = New CropInfo With {.OffsetX = i.OffsetX, .OffsetY = i.OffsetY, .Scale = If(i.Scale > 0, i.Scale, 1.0F),
+                                           .Rotation = i.PhotoRotation, .FlipHorizontal = i.Flip}}).ToList()}
         Dim ms = If(Mosaic, New MosaicState())
         project.Mosaic = New MosaicSettings With {
             .TargetPath = ms.TargetPath,
@@ -159,10 +173,12 @@ Public NotInheritable Class DesignState
         project.Collage.TemplateId = TemplateId
         project.Collage.Gap = Gap
         project.Collage.CornerRadius = CornerRadius
+        project.Collage.CellsAdjusted = CellsAdjusted
         project.Collage.Cells = Cells.Select(Function(c) New Cell With {
             .Bounds = New RectangleF(c.X, c.Y, c.Width, c.Height),
             .PhotoId = c.PhotoId,
-            .Crop = New CropInfo With {.OffsetX = c.OffsetX, .OffsetY = c.OffsetY, .Scale = c.Scale}}).ToList()
+            .Crop = New CropInfo With {.OffsetX = c.OffsetX, .OffsetY = c.OffsetY, .Scale = c.Scale,
+                                       .Rotation = c.Rotation, .FlipHorizontal = c.Flip}}).ToList()
         project.Texts.Clear()
         project.Texts.AddRange(Texts.Select(Function(t) New TextLayer With {
             .Id = t.Id, .Text = t.Text, .FontFamily = t.FontFamily, .FontSize = t.FontSize,

@@ -95,9 +95,9 @@ Public Module CollageRenderer
         Return path
     End Function
 
-    ''' <summary>照片在格子中實際繪製的來源區域（照片像素座標）。</summary>
+    ''' <summary>照片在格子中實際繪製的來源區域（轉正後的照片像素座標）。</summary>
     Public Function GetSourceRect(image As Image, cell As Cell, cellRect As RectangleF) As RectangleF
-        Return CropMath.GetSourceRect(New SizeF(image.Width, image.Height), cellRect.Size, cell.Crop)
+        Return CropMath.GetOrientedSourceRect(New SizeF(image.Width, image.Height), cellRect.Size, cell.Crop)
     End Function
 
     Private Sub DrawCell(g As Graphics, project As MontageProject, cell As Cell, rect As RectangleF,
@@ -124,9 +124,9 @@ Public Module CollageRenderer
                 ' 目標稍微外擴半像素，避免與裁切路徑之間出現縫隙
                 Dim dest = Rectangle.FromLTRB(CInt(Math.Floor(rect.Left)), CInt(Math.Floor(rect.Top)), CInt(Math.Ceiling(rect.Right)), CInt(Math.Ceiling(rect.Bottom)))
                 Dim sx = src.Width / rect.Width, sy = src.Height / rect.Height
-                g.DrawImage(image, dest,
-                            src.X - (rect.Left - dest.Left) * sx, src.Y - (rect.Top - dest.Top) * sy,
-                            dest.Width * sx, dest.Height * sy, GraphicsUnit.Pixel, attrs)
+                Dim expanded As New RectangleF(src.X - (rect.Left - dest.Left) * sx, src.Y - (rect.Top - dest.Top) * sy,
+                                               dest.Width * sx, dest.Height * sy)
+                PhotoOrientation.Draw(g, image, dest, expanded, cell.Crop, attrs)
             Finally
                 g.Restore(state)
                 options.ReleaseImage?.Invoke(asset, image)

@@ -35,14 +35,20 @@ Friend Class CollageCanvas
         FreeResize
         FreeRotate
         FreeMarquee
+        Divider
     End Enum
+
+    Private Shared ReadOnly DividerColor As Color = Color.FromArgb(47, 123, 216)
 
     Private Const SnapThreshold As Integer = 6
     Private Const HandleRadius As Integer = 7
     Private Shared ReadOnly GuideColor As Color = Color.FromArgb(214, 51, 127)
+    ' 浮動工具列的按鈕；分隔線畫在 ToolbarGroupStarts 所列的按鈕前
     Private Shared ReadOnly ToolbarCommands As FreeCommand() = {
+        FreeCommand.Crop,
         FreeCommand.BringToFront, FreeCommand.BringForward, FreeCommand.SendBackward, FreeCommand.SendToBack,
         FreeCommand.Duplicate, FreeCommand.Remove}
+    Private Shared ReadOnly ToolbarGroupStarts As Integer() = {1, 5}
 
     ' 自由拼貼
     Private ReadOnly _freeSelection As New List(Of String)
@@ -69,6 +75,8 @@ Friend Class CollageCanvas
     Private _selectedTextId As String
     Private _drag As DragMode = DragMode.None
     Private _dragCell As Integer = -1
+    Private _hoverDivider As CellDivider
+    Private _dragDivider As CellDivider
     Private _pressPoint As Point
     Private _lastPoint As Point
     Private _textStartPosition As PointF
@@ -77,6 +85,8 @@ Friend Class CollageCanvas
 
     Private ReadOnly _menu As New ContextMenuStrip()
     Private ReadOnly _menuCrop As ToolStripItem
+    Private ReadOnly _menuCropDialog As ToolStripItem
+    Private ReadOnly _menuResetSizes As ToolStripItem
     Private ReadOnly _menuResetCrop As ToolStripItem
     Private ReadOnly _menuSeparator As ToolStripItem
     Private ReadOnly _menuClear As ToolStripItem
@@ -107,6 +117,15 @@ Friend Class CollageCanvas
     ''' <summary>從檔案總管拖放了檔案或資料夾。</summary>
     Public Event FilesDropped As EventHandler(Of FilesDroppedEventArgs)
 
+    ' 拖曳分隔線改變了格子大小
+    Public Event CellsResized As EventHandler
+
+    ' 要求重設格子大小（右鍵選單）
+    Public Event ResetCellSizesRequested As EventHandler
+
+    ' 要求開啟裁切視窗（拼貼的格子或自由拼貼的照片）
+    Public Event CropRequested As EventHandler(Of CropRequestedEventArgs)
+
     Public Sub New()
         SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.OptimizedDoubleBuffer Or
                  ControlStyles.UserPaint Or ControlStyles.ResizeRedraw Or ControlStyles.Selectable, True)
@@ -114,11 +133,13 @@ Friend Class CollageCanvas
         TabStop = True
         BackColor = Color.FromArgb(48, 48, 48)
 
-        _menuCrop = _menu.Items.Add("調整取景（雙擊）", Nothing, Sub() EnterCropMode(_selected))
-        _menuResetCrop = _menu.Items.Add("重設取景", Nothing, Sub() ResetCrop(_selected))
+        _menuCropDialog = _menu.Items.Add("裁切…", Nothing, Sub() RequestCellCrop(_selected))
+        _menuCrop = _menu.Items.Add("快速取景（雙擊）", Nothing, Sub() EnterCropMode(_selected))
+        _menuResetCrop = _menu.Items.Add("重設裁切", Nothing, Sub() ResetCrop(_selected))
         _menuSeparator = New ToolStripSeparator()
         _menu.Items.Add(_menuSeparator)
         _menuClear = _menu.Items.Add("清空此格", Nothing, Sub() ClearCell(_selected))
+        _menuResetSizes = _menu.Items.Add("重設格子大小", Nothing, Sub() RaiseEvent ResetCellSizesRequested(Me, EventArgs.Empty))
         _menuDeleteText = _menu.Items.Add("刪除文字", Nothing, Sub() DeleteSelectedText())
         _menuMosaicNext = _menu.Items.Add("換成下一個相近的素材", Nothing,
             Sub() RaiseEvent MosaicCellCommand(Me, New MosaicCellCommandEventArgs(_selected, MosaicCellCommandKind.NextAlternative)))
@@ -346,6 +367,8 @@ Friend Class CollageCanvas
         End If
 
         If _cropCell >= 0 AndAlso _cropCell < rects.Count Then DrawCropOverlay(g, _cropCell, rects(_cropCell))
+        Dim activeDivider = If(_dragDivider, _hoverDivider)
+        If activeDivider IsNot Nothing Then DrawDivider(g, activeDivider, bounds)
 
         If _drag = DragMode.SwapCell AndAlso _dragCell >= 0 AndAlso _dragCell < rects.Count Then
             Using dim_ As New SolidBrush(Color.FromArgb(120, BackColor))
@@ -422,15 +445,17 @@ Friend Class CollageCanvas
         Dim image = GetCellImage(index)
         If image Is Nothing Then Return
 
+        Dim crop = Cells(index).Crop
         Dim src = CollageRenderer.GetSourceRect(image, Cells(index), rect)
         Dim scale = rect.Width / src.Width
-        Dim full As New RectangleF(rect.X - src.X * scale, rect.Y - src.Y * scale, image.Width * scale, image.Height * scale)
+        Dim oriented = PhotoOrientation.OrientedSize(New SizeF(image.Width, image.Height), crop)
+        Dim full As New RectangleF(rect.X - src.X * scale, rect.Y - src.Y * scale, oriented.Width * scale, oriented.Height * scale)
 
         Dim state = g.Save()
         g.SetClip(rect, CombineMode.Exclude)
         Using attrs As New ImageAttributes()
             attrs.SetColorMatrix(New ColorMatrix With {.Matrix33 = 0.35F})
-            g.DrawImage(image, Rectangle.Round(full), 0, 0, image.Width, image.Height, GraphicsUnit.Pixel, attrs)
+            PhotoOrientation.Draw(g, image, full, New RectangleF(PointF.Empty, oriented), crop, attrs)
         End Using
         g.Restore(state)
 
@@ -509,6 +534,18 @@ Friend Class CollageCanvas
             Return
         End If
 
+        If e.Button = MouseButtons.Left Then
+            Dim divider = HitTestDivider(e.Location)
+            If divider IsNot Nothing Then
+                _cropCell = -1
+                _drag = DragMode.Divider
+                _dragDivider = divider
+                _hoverDivider = Nothing
+                Invalidate()
+                Return
+            End If
+        End If
+
         Dim index = HitTestCell(e.Location)
         If e.Button = MouseButtons.Right Then
             If index <> _cropCell Then _cropCell = -1
@@ -562,6 +599,8 @@ Friend Class CollageCanvas
                 FreeRotate(e.Location, (ModifierKeys And Keys.Shift) = Keys.Shift)
             Case DragMode.FreeMarquee
                 FreeMarquee(e.Location)
+            Case DragMode.Divider
+                DragDivider(e.Location)
         End Select
         _lastPoint = e.Location
     End Sub
@@ -588,9 +627,21 @@ Friend Class CollageCanvas
         If text IsNot Nothing Then
             SelectText(text.Id)
             RaiseEvent TextEditRequested(Me, EventArgs.Empty)
+        ElseIf IsFree Then
+            Dim item = FreeGeometry.HitTest(_project.Free.Items, GetCanvasBounds(), e.Location)
+            If item IsNot Nothing Then
+                SetFreeSelection({item.Id})
+                RaiseEvent CropRequested(Me, New CropRequestedEventArgs(-1, item.Id))
+            End If
         Else
             EnterCropMode(HitTestCell(e.Location))
         End If
+    End Sub
+
+    Private Sub RequestCellCrop(index As Integer)
+        If Not HasPhoto(index) Then Return
+        _cropCell = -1
+        RaiseEvent CropRequested(Me, New CropRequestedEventArgs(index, Nothing))
     End Sub
 
     Protected Overrides Sub OnMouseWheel(e As MouseEventArgs)
@@ -673,16 +724,30 @@ Friend Class CollageCanvas
             If Me.Cursor IsNot cursor Then Me.Cursor = cursor
             Return
         End If
+        Dim divider As CellDivider = Nothing
         If HitTestRotateHandle(pt) Then
             cursor = Cursors.Hand
         ElseIf HitTestText(pt) IsNot Nothing Then
             cursor = Cursors.SizeAll
+        Else
+            divider = HitTestDivider(pt)
+            If divider IsNot Nothing Then cursor = If(divider.Vertical, Cursors.VSplit, Cursors.HSplit)
+        End If
+        If Not SameDivider(divider, _hoverDivider) Then
+            _hoverDivider = divider
+            Invalidate()
         End If
         If Me.Cursor IsNot cursor Then Me.Cursor = cursor
     End Sub
 
+    Private Shared Function SameDivider(a As CellDivider, b As CellDivider) As Boolean
+        If a Is Nothing OrElse b Is Nothing Then Return a Is b
+        Return a.Vertical = b.Vertical AndAlso Math.Abs(a.Position - b.Position) < 0.0001F AndAlso Math.Abs(a.SpanStart - b.SpanStart) < 0.0001F
+    End Function
+
     Private Sub CancelDrag()
         _drag = DragMode.None
+        _dragDivider = Nothing
         _dragCell = -1
         _snap = SnapResult.None
         _freeMarquee = RectangleF.Empty
@@ -698,14 +763,17 @@ Friend Class CollageCanvas
         End If
         Dim mosaicCell = Not textSelected AndAlso IsMosaic AndAlso _selected >= 0
         _menuCrop.Visible = Not textSelected AndAlso Not IsMosaic
+        _menuCropDialog.Visible = _menuCrop.Visible
         _menuResetCrop.Visible = Not textSelected AndAlso Not IsMosaic
         _menuSeparator.Visible = Not textSelected AndAlso Not IsMosaic
         _menuClear.Visible = Not textSelected AndAlso Not IsMosaic
+        _menuResetSizes.Visible = Not textSelected AndAlso Not IsMosaic AndAlso _project.Collage.CellsAdjusted
         _menuDeleteText.Visible = textSelected
         _menuMosaicNext.Visible = mosaicCell
         _menuMosaicSelected.Visible = mosaicCell
         If mosaicCell Then Return
         _menuCrop.Enabled = has
+        _menuCropDialog.Enabled = has
         _menuResetCrop.Enabled = has
         _menuClear.Enabled = has AndAlso AllowClear
         If Not textSelected AndAlso _selected < 0 Then e.Cancel = True
@@ -740,7 +808,7 @@ Friend Class CollageCanvas
         RecordDragChangeOnce()
         Dim rect = GetCellRects()(index)
         Dim c = Cells(index)
-        c.Crop = CropMath.Pan(c.Crop, New SizeF(image.Width, image.Height), rect.Size, dx, dy)
+        c.Crop = CropMath.Pan(c.Crop, PhotoOrientation.OrientedSize(New SizeF(image.Width, image.Height), c.Crop), rect.Size, dx, dy)
         Invalidate()
         RaiseEvent CellsChanged(Me, EventArgs.Empty)
     End Sub
@@ -855,7 +923,7 @@ Friend Class CollageCanvas
         Dim sel = GetSelectionBounds()
         If sel.IsEmpty Then Return Rectangle.Empty
         Dim bw = Dev(32), bh = Dev(28), pad = Dev(4), sepW = Dev(9)
-        Dim w = ToolbarCommands.Length * bw + pad * 2 + sepW
+        Dim w = ToolbarCommands.Length * bw + pad * 2 + sepW * ToolbarGroupStarts.Length
         Dim h = bh + pad * 2
         Dim above = If(SingleSelected() IsNot Nothing, Dev(40), Dev(12))   ' 留給旋轉控制點
         Dim x = CInt(sel.Left + sel.Width / 2 - w / 2)
@@ -868,7 +936,7 @@ Friend Class CollageCanvas
 
     Private Function GetToolbarButtonRect(toolbar As Rectangle, index As Integer) As Rectangle
         Dim bw = Dev(32), bh = Dev(28), pad = Dev(4), sepW = Dev(9)
-        Dim x = toolbar.X + pad + index * bw + If(index >= 4, sepW, 0)
+        Dim x = toolbar.X + pad + index * bw + sepW * ToolbarGroupStarts.Count(Function(start) index >= start)
         Return New Rectangle(x, toolbar.Y + pad, bw, bh)
     End Function
 
@@ -1019,6 +1087,12 @@ Friend Class CollageCanvas
     ''' <summary>浮動工具列與面板共用的命令。</summary>
     Public Sub ExecuteFreeCommand(command As FreeCommand)
         If _project Is Nothing OrElse _freeSelection.Count = 0 Then Return
+        If command = FreeCommand.Crop Then
+            ' 裁切一次只處理一張：多選時裁切最上層的那張
+            Dim target = _project.Free.Items.LastOrDefault(Function(i) _freeSelection.Contains(i.Id))
+            If target IsNot Nothing Then RaiseEvent CropRequested(Me, New CropRequestedEventArgs(-1, target.Id))
+            Return
+        End If
         Dim items = _project.Free.Items
         Dim sel = New HashSet(Of String)(_freeSelection)
         Dim moving = items.Where(Function(i) sel.Contains(i.Id)).ToList()
@@ -1127,6 +1201,7 @@ Friend Class CollageCanvas
 
     Friend Shared Function FreeCommandText(command As FreeCommand) As String
         Select Case command
+            Case FreeCommand.Crop : Return "裁切"
             Case FreeCommand.BringToFront : Return "移到最上層"
             Case FreeCommand.BringForward : Return "上移一層"
             Case FreeCommand.SendBackward : Return "下移一層"
@@ -1138,6 +1213,7 @@ Friend Class CollageCanvas
 
     Private Shared Function FreeCommandHelp(command As FreeCommand) As String
         Select Case command
+            Case FreeCommand.Crop : Return "開啟裁切視窗，可選比例、旋轉與翻轉（也可以雙擊照片）。"
             Case FreeCommand.BringToFront : Return "讓選取的照片蓋在所有照片上面。"
             Case FreeCommand.BringForward : Return "讓選取的照片往上一層。"
             Case FreeCommand.SendBackward : Return "讓選取的照片往下一層。"
@@ -1154,7 +1230,7 @@ Friend Class CollageCanvas
         g.SmoothingMode = SmoothingMode.AntiAlias
 
         If _project.Free.Items.Count = 0 Then
-            TextRenderer.DrawText(g, "從左側拖曳縮圖到這裡，或按右側「自動散佈」", Font, Rectangle.Round(bounds), Color.Gray,
+            TextRenderer.DrawText(g, "從左側拖曳縮圖到這裡，或按右側「套用排列」", Font, Rectangle.Round(bounds), Color.Gray,
                                   TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.WordBreak)
         End If
 
@@ -1233,8 +1309,10 @@ Friend Class CollageCanvas
             DrawToolbarIcon(g, ToolbarCommands(i), r)
         Next
         Using sep As New Pen(Color.FromArgb(213, 218, 225))
-            Dim x = GetToolbarButtonRect(toolbar, 4).X - Dev(5)
-            g.DrawLine(sep, x, toolbar.Y + Dev(8), x, toolbar.Bottom - Dev(8))
+            For Each start In ToolbarGroupStarts
+                Dim x = GetToolbarButtonRect(toolbar, start).X - Dev(5)
+                g.DrawLine(sep, x, toolbar.Y + Dev(8), x, toolbar.Bottom - Dev(8))
+            Next
         End Using
     End Sub
 
@@ -1246,6 +1324,9 @@ Friend Class CollageCanvas
         Dim iconColor = If(command = FreeCommand.Remove, Color.FromArgb(180, 35, 24), Color.FromArgb(29, 35, 48))
         Using pen As New Pen(iconColor, Math.Max(1.4F, 1.6F * s)) With {.StartCap = LineCap.Round, .EndCap = LineCap.Round, .LineJoin = LineJoin.Round}
             Select Case command
+                Case FreeCommand.Crop
+                    g.DrawLines(pen, {P(5, 1.5F), P(5, 13), P(16.5F, 13)})
+                    g.DrawLines(pen, {P(1.5F, 5), P(13, 5), P(13, 16.5F)})
                 Case FreeCommand.BringToFront
                     g.DrawRectangle(pen, ox + 3 * s, oy + 7 * s, 12 * s, 8 * s)
                     g.DrawLine(pen, P(6, 4), P(12, 4))
@@ -1269,6 +1350,90 @@ Friend Class CollageCanvas
                     g.DrawLines(pen, {P(5, 5), P(6, 15), P(12, 15), P(13, 5)})
             End Select
         End Using
+    End Sub
+
+#End Region
+
+#Region "分隔線"
+
+    ''' <summary>滑鼠下方的分隔線（容許範圍：間距的一半或 5 像素）；沒有時回傳 Nothing。</summary>
+    Private Function HitTestDivider(pt As Point) As CellDivider
+        If _project Is Nothing OrElse IsMosaic OrElse IsFree OrElse Cells.Count < 2 Then Return Nothing
+        Dim b = GetCanvasBounds()
+        If b.Width <= 0 OrElse b.Height <= 0 Then Return Nothing
+        Dim gapPx = _project.Collage.Gap * Math.Min(b.Width, b.Height)
+        Dim tolerance = Math.Max(LogicalToDeviceUnits(5), gapPx / 2 + 1)
+        Dim best As CellDivider = Nothing
+        Dim bestDistance = Single.MaxValue
+        For Each d In CellDividers.FindAll(Cells.Select(Function(c) c.Bounds).ToList())
+            Dim linePos = If(d.Vertical, b.X + d.Position * b.Width, b.Y + d.Position * b.Height)
+            Dim spanA = If(d.Vertical, b.Y + d.SpanStart * b.Height, b.X + d.SpanStart * b.Width)
+            Dim spanB = If(d.Vertical, b.Y + d.SpanEnd * b.Height, b.X + d.SpanEnd * b.Width)
+            Dim along = If(d.Vertical, pt.Y, pt.X)
+            Dim across = Math.Abs(If(d.Vertical, pt.X, pt.Y) - linePos)
+            If along < spanA OrElse along > spanB OrElse across > tolerance Then Continue For
+            If across < bestDistance Then
+                best = d
+                bestDistance = across
+            End If
+        Next
+        Return best
+    End Function
+
+    Private Sub DragDivider(pt As Point)
+        If _dragDivider Is Nothing Then Return
+        Dim b = GetCanvasBounds()
+        Dim pos = If(_dragDivider.Vertical, (pt.X - b.X) / b.Width, (pt.Y - b.Y) / b.Height)
+        ' 靠近 1/2、1/3、2/3、1/4、3/4 時吸附（按住 Alt 不吸附）
+        If (ModifierKeys And Keys.Alt) <> Keys.Alt Then
+            Dim threshold = LogicalToDeviceUnits(SnapThreshold) / If(_dragDivider.Vertical, b.Width, b.Height)
+            For Each snapTo In {0.5F, 1 / 3.0F, 2 / 3.0F, 0.25F, 0.75F}
+                If Math.Abs(pos - snapTo) <= threshold Then
+                    pos = snapTo
+                    Exit For
+                End If
+            Next
+        End If
+        If Math.Abs(pos - _dragDivider.Position) < 0.0001F Then Return
+        RecordDragChangeOnce()
+        CellDividers.Move(Cells, _dragDivider, pos)
+        Invalidate()
+        RaiseEvent CellsResized(Me, EventArgs.Empty)
+    End Sub
+
+    ''' <summary>滑鼠停留或拖曳中的分隔線：沿著間距畫一條粗線，中間加握把。</summary>
+    Private Sub DrawDivider(g As Graphics, d As CellDivider, bounds As RectangleF)
+        Dim thickness As Single = LogicalToDeviceUnits(3)
+        Dim grip As Single = LogicalToDeviceUnits(26)
+        Dim a As PointF, c As PointF
+        If d.Vertical Then
+            Dim x = bounds.X + d.Position * bounds.Width
+            a = New PointF(x, bounds.Y + d.SpanStart * bounds.Height)
+            c = New PointF(x, bounds.Y + d.SpanEnd * bounds.Height)
+        Else
+            Dim y = bounds.Y + d.Position * bounds.Height
+            a = New PointF(bounds.X + d.SpanStart * bounds.Width, y)
+            c = New PointF(bounds.X + d.SpanEnd * bounds.Width, y)
+        End If
+        Using pen As New Pen(Color.FromArgb(220, DividerColor), thickness)
+            g.DrawLine(pen, a, c)
+        End Using
+        Dim mid As New PointF((a.X + c.X) / 2, (a.Y + c.Y) / 2)
+        Dim gripRect = If(d.Vertical,
+                          New RectangleF(mid.X - thickness * 1.6F, mid.Y - grip / 2, thickness * 3.2F, grip),
+                          New RectangleF(mid.X - grip / 2, mid.Y - thickness * 1.6F, grip, thickness * 3.2F))
+        Using path = CollageRenderer.CreateCellPath(gripRect, thickness * 1.6F), fill As New SolidBrush(Color.White), outline As New Pen(DividerColor, 1.5F)
+            g.FillPath(fill, path)
+            g.DrawPath(outline, path)
+        End Using
+    End Sub
+
+    Protected Overrides Sub OnMouseLeave(e As EventArgs)
+        MyBase.OnMouseLeave(e)
+        If _hoverDivider IsNot Nothing Then
+            _hoverDivider = Nothing
+            Invalidate()
+        End If
     End Sub
 
 #End Region
@@ -1347,6 +1512,7 @@ Friend Class CollageCanvas
 End Class
 
 Friend Enum FreeCommand
+    Crop
     BringToFront
     BringForward
     SendBackward
@@ -1393,5 +1559,19 @@ Friend Class ChangeStartingEventArgs
 
     Public Sub New(key As String)
         Me.Key = key
+    End Sub
+End Class
+
+Friend Class CropRequestedEventArgs
+    Inherits EventArgs
+
+    ''' <summary>拼貼格子的索引；自由拼貼時為 -1。</summary>
+    Public ReadOnly Property CellIndex As Integer
+    ''' <summary>自由拼貼照片的 Id；拼貼時為 Nothing。</summary>
+    Public ReadOnly Property FreeItemId As String
+
+    Public Sub New(cellIndex As Integer, freeItemId As String)
+        Me.CellIndex = cellIndex
+        Me.FreeItemId = freeItemId
     End Sub
 End Class

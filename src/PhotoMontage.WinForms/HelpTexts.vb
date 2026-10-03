@@ -52,9 +52,14 @@ Friend NotInheritable Class HelpTexts
         "變更後版型會依新比例重新排列。")
 
     Public Shared ReadOnly Templates As New HelpTip("版型",
-        "選擇照片的排列方式。",
+        "點選縮圖套用版型，依照片張數分組。",
         "「自動排版」依照片數量與直橫方向安排。",
-        "在畫布上拖曳照片可以互換位置。")
+        "在畫布上拖曳照片可以互換位置，",
+        "拖曳格子之間的分隔線可以調整格子大小。")
+
+    Public Shared ReadOnly ResetCellSizes As New HelpTip("重設格子大小",
+        "拖曳分隔線調整過的格子，",
+        "恢復成版型原本的大小（照片不變）。")
 
     Public Shared ReadOnly AutoAssign As New HelpTip("重新自動分配",
         "依照片的直橫方向，",
@@ -188,6 +193,10 @@ Friend NotInheritable Class HelpTexts
         "在照片下方加上柔和的陰影，",
         "看起來像放在桌上的相片。")
 
+    Public Shared ReadOnly FreeCrop As New HelpTip("裁切",
+        "開啟裁切視窗：選比例、框選範圍、旋轉或翻轉。",
+        "裁切後照片的形狀會跟著改變。也可以雙擊照片。")
+
     Public Shared ReadOnly FreeBringToFront As New HelpTip("移到最上層",
         "讓選取的照片蓋在其他照片上面。")
 
@@ -198,16 +207,47 @@ Friend NotInheritable Class HelpTexts
         "把選取照片的外框、寬度與陰影，",
         "套用到畫布上所有的照片。")
 
+    Public Shared ReadOnly FreeStyle As New HelpTip("排列方式",
+        "隨機散佈、整齊格狀、螺旋、圓環、愛心、",
+        "扇形、照片堆、斜向瀑布。",
+        "選好後按「套用排列」。")
+
+    Public Shared ReadOnly FreeOverlap As New HelpTip("照片可以重疊",
+        "勾選：照片較大、互相交疊。",
+        "不勾選：照片保持間隔，照片多時會自動縮小。",
+        "整齊格狀、扇形、照片堆不適用。")
+
+    Public Shared ReadOnly FreeDirection As New HelpTip("方向",
+        "螺旋與圓環的排列方向：順時針或逆時針。")
+
     Public Shared ReadOnly FreeLooseness As New HelpTip("隨性程度",
-        "「自動散佈」時照片的偏移、傾斜與重疊程度。",
-        "設為「整齊」時照片不傾斜。")
+        "排列時照片的位置偏移與傾斜角度。",
+        "設為「整齊」時不偏移；整齊格狀不受影響。")
 
-    Public Shared ReadOnly FreeScatter As New HelpTip("自動散佈",
-        "依隨性程度重新擺放所有照片，",
-        "每按一次換一種排法。")
+    Public Shared ReadOnly FreeArrange As New HelpTip("套用排列",
+        "依目前的排列方式重新擺放所有照片，",
+        "每按一次換一種變化（可以復原）。")
 
-    Public Shared ReadOnly FreeTidy As New HelpTip("整齊排列",
-        "把所有照片排成整齊、不傾斜的格狀。")
+#End Region
+
+#Region "裁切"
+
+    Public Shared ReadOnly CropRatio As New HelpTip("比例",
+        "原始比例：照片本身的長寬比。",
+        "自由：可拖曳四邊任意調整。",
+        "其他：固定比例，例如 1:1 正方形。")
+
+    Public Shared ReadOnly CropRotateLeft As New HelpTip("向左轉",
+        "照片逆時針旋轉 90°。")
+
+    Public Shared ReadOnly CropRotateRight As New HelpTip("向右轉",
+        "照片順時針旋轉 90°。")
+
+    Public Shared ReadOnly CropFlip As New HelpTip("水平翻轉",
+        "照片左右鏡像。")
+
+    Public Shared ReadOnly CropReset As New HelpTip("重設",
+        "取消旋轉與翻轉，裁切框恢復最大。")
 
 #End Region
 

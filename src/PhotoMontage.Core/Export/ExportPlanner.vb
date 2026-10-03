@@ -31,7 +31,8 @@ Public Module ExportPlanner
         If cellSize.Width <= 0 OrElse cellSize.Height <= 0 Then Return 64
 
         Dim photoLong = Math.Max(photoSize.Width, photoSize.Height)
-        Dim scale = CropMath.CoverScale(New SizeF(photoSize.Width, photoSize.Height), cellSize) * CropMath.EffectiveScale(crop)
+        Dim oriented = PhotoOrientation.OrientedSize(New SizeF(photoSize.Width, photoSize.Height), crop)
+        Dim scale = CropMath.CoverScale(oriented, cellSize) * CropMath.EffectiveScale(crop)
         Dim needed = CInt(Math.Ceiling(photoLong * Math.Min(1.0, scale * 1.05)))
         Return Math.Max(64, Math.Min(photoLong, needed))
     End Function

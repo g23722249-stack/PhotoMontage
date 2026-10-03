@@ -39,7 +39,7 @@ Public Class FreeItem
         Return New FreeItem With {
             .PhotoId = PhotoId, .CenterX = CenterX, .CenterY = CenterY, .Width = Width, .InnerAspect = InnerAspect,
             .Rotation = Rotation, .Frame = Frame, .FrameWidth = FrameWidth, .Shadow = Shadow,
-            .Crop = New CropInfo With {.OffsetX = Crop.OffsetX, .OffsetY = Crop.OffsetY, .Scale = Crop.Scale}}
+            .Crop = Crop.Clone()}
     End Function
 End Class
 
@@ -48,8 +48,17 @@ Public Class FreeLayoutSettings
     ''' <summary>畫布上的照片，依圖層由下往上排列。</summary>
     Public Property Items As New List(Of FreeItem)
 
-    ''' <summary>「自動散佈」的隨性程度，0（整齊）～ 1（隨性）。</summary>
+    ''' <summary>排列時的隨性程度，0（整齊）～ 1（隨性）。</summary>
     Public Property Looseness As Single = 0.5F
+
+    ''' <summary>「套用排列」使用的排列方式。</summary>
+    Public Property Style As ArrangeStyle = ArrangeStyle.Scatter
+
+    ''' <summary>排列時照片可以互相重疊。</summary>
+    Public Property Overlap As Boolean = True
+
+    ''' <summary>螺旋與圓環順時針排列。</summary>
+    Public Property Clockwise As Boolean = True
 
     Public Const MinItemWidth As Single = 0.04F
     Public Const MaxItemWidth As Single = 1.5F

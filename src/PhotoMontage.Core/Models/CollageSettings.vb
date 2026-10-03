@@ -12,6 +12,9 @@ Public Class CollageSettings
     Public Property CornerRadius As Single = 0F
 
     Public Property Cells As New List(Of Cell)
+
+    ''' <summary>使用者拖曳分隔線調整過格子大小（重新套用版型或自動排版重排時清除）。</summary>
+    Public Property CellsAdjusted As Boolean
 End Class
 
 ''' <summary>拼貼中的一個格子。</summary>
@@ -35,4 +38,14 @@ Public Class CropInfo
 
     ''' <summary>在 cover 基礎上的額外放大倍率，≥ 1。</summary>
     Public Property Scale As Single = 1.0F
+
+    ''' <summary>照片順時針旋轉幾個 90°（0~3），在水平翻轉之後套用。偏移與縮放以轉正後的照片為準。</summary>
+    Public Property Rotation As Integer
+
+    ''' <summary>水平翻轉（鏡像）。</summary>
+    Public Property FlipHorizontal As Boolean
+
+    Public Function Clone() As CropInfo
+        Return New CropInfo With {.OffsetX = OffsetX, .OffsetY = OffsetY, .Scale = Scale, .Rotation = Rotation, .FlipHorizontal = FlipHorizontal}
+    End Function
 End Class
