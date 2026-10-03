@@ -125,6 +125,16 @@ Friend Class PrintSetupDialog
         _initializing = False
         OnPrinterChanged()
 
+        Dim help As New HelpToolTip(Me)
+        help.SetHelp(HelpTexts.PrintPrinter, _printer)
+        help.SetHelp(HelpTexts.PrintPaper, _paper)
+        help.SetHelp(HelpTexts.PrintOrientation, _orientation)
+        help.SetHelp(HelpTexts.PrintFit, _fit)
+        help.SetHelp(HelpTexts.PrintMargin, _margin)
+        help.SetHelp(HelpTexts.PrintCopies, _copies)
+        help.SetHelp(HelpTexts.PrintMore, _moreButton)
+        help.SetHelp(HelpTexts.PrintStart, _printButton)
+
         AquaTheme.Apply(Me, accent)
     End Sub
 

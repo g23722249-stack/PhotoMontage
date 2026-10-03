@@ -32,6 +32,8 @@ Friend Class TextPanel
     Public Event AddRequested As EventHandler
     Public Event DeleteRequested As EventHandler
 
+    Private ReadOnly _help As New HelpToolTip(Me)
+
     Public Sub New()
         Dim addButton = Add(New PillButton() With {.Text = "新增文字"})
         AddHandler addButton.Click, Sub(s, e) RaiseEvent AddRequested(Me, EventArgs.Empty)
@@ -40,11 +42,11 @@ Friend Class TextPanel
         _hint.ForeColor = SystemColors.GrayText
         _hint.MaximumSize = New Size(210, 0)
 
-        Editor(AddLabel("內容"))
+        Dim contentLabel = Editor(AddLabel("內容"))
         _text = Editor(Add(New Aqua.TextBox() With {.Multiline = True, .ScrollBars = ScrollBars.Vertical, .Height = 64}))
         AddHandler _text.TextChanged, Sub(s, e) Apply("text:content", Sub(t) t.Text = _text.Text)
 
-        Editor(AddLabel("字型"))
+        Dim fontLabel = Editor(AddLabel("字型"))
         _font = Editor(Add(New ComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList, .MaxDropDownItems = 20}))
         Using fonts As New InstalledFontCollection()
             For Each family In fonts.Families
@@ -53,11 +55,11 @@ Friend Class TextPanel
         End Using
         AddHandler _font.SelectedIndexChanged, Sub(s, e) Apply(Nothing, Sub(t) t.FontFamily = CStr(_font.SelectedItem))
 
-        Editor(AddLabel("大小"))
+        Dim sizeLabel = Editor(AddLabel("大小"))
         _size = Editor(Add(New LabeledSlider(1, 40, Function(v) $"{v * 0.5:0.#}%")))
         AddHandler _size.ValueChanged, Sub(s, e) Apply("text:size", Sub(t) t.FontSize = _size.Value * 0.005F)
 
-        Editor(AddLabel("顏色"))
+        Dim colorLabel = Editor(AddLabel("顏色"))
         _color = Editor(Add(New ColorButton()))
         AddHandler _color.ColorPicked, Sub(s, e) Apply(Nothing, Sub(t) t.Color = _color.SelectedColor)
 
@@ -67,11 +69,11 @@ Friend Class TextPanel
         AddHandler _bold.CheckedChanged, Sub(s, e) Apply(Nothing, Sub(t) t.Bold = _bold.Checked)
         AddHandler _italic.CheckedChanged, Sub(s, e) Apply(Nothing, Sub(t) t.Italic = _italic.Checked)
 
-        Editor(AddLabel("對齊"))
+        Dim alignLabel = Editor(AddLabel("對齊"))
         _alignment = Editor(Add(New SegmentedChoice("靠左", "置中", "靠右")))
         AddHandler _alignment.SelectedChanged, Sub(s, e) Apply(Nothing, Sub(t) t.Alignment = CType(Math.Max(0, _alignment.SelectedIndex), StringAlignment))
 
-        Editor(AddLabel("外框"))
+        Dim outlineLabel = Editor(AddLabel("外框"))
         _outline = Editor(Add(New LabeledSlider(0, 20, Function(v) If(v = 0, "無", $"{v}%"))))
         AddHandler _outline.ValueChanged, Sub(s, e) Apply("text:outline", Sub(t) t.OutlineWidth = _outline.Value / 100.0F)
         _outlineColor = Editor(Add(New ColorButton() With {.ButtonText = "外框色…"}))
@@ -83,13 +85,28 @@ Friend Class TextPanel
         _shadowColor = Editor(Add(New ColorButton() With {.ButtonText = "陰影色…", .PreserveAlpha = True}))
         AddHandler _shadowColor.ColorPicked, Sub(s, e) Apply(Nothing, Sub(t) t.ShadowColor = _shadowColor.SelectedColor)
 
-        Editor(AddLabel("旋轉（度）"))
+        Dim rotationLabel = Editor(AddLabel("旋轉（度）"))
         _rotation = Editor(Add(New LabeledSlider(-180, 180, Function(v) $"{v}°")))
         AddHandler _rotation.ValueChanged, Sub(s, e) Apply("text:rotation", Sub(t) t.Rotation = _rotation.Value)
 
         Dim delete = Editor(Add(New PillButton() With {.Text = "刪除這段文字"}))
         delete.Margin = New Padding(0, 12, 0, 2)
         AddHandler delete.Click, Sub(s, e) RaiseEvent DeleteRequested(Me, EventArgs.Empty)
+
+        _help.SetHelp(HelpTexts.AddText, addButton)
+        _help.SetHelp(HelpTexts.TextContent, contentLabel, _text)
+        _help.SetHelp(HelpTexts.TextFont, fontLabel, _font)
+        _help.SetHelp(HelpTexts.TextSize, sizeLabel, _size)
+        _help.SetHelp(HelpTexts.TextColor, colorLabel, _color)
+        _help.SetHelp(HelpTexts.TextBold, _bold)
+        _help.SetHelp(HelpTexts.TextItalic, _italic)
+        _help.SetHelp(HelpTexts.TextAlignment, alignLabel, _alignment)
+        _help.SetHelp(HelpTexts.TextOutline, outlineLabel, _outline)
+        _help.SetHelp(HelpTexts.TextOutlineColor, _outlineColor)
+        _help.SetHelp(HelpTexts.TextShadow, _shadow)
+        _help.SetHelp(HelpTexts.TextShadowColor, _shadowColor)
+        _help.SetHelp(HelpTexts.TextRotation, rotationLabel, _rotation)
+        _help.SetHelp(HelpTexts.DeleteText, delete)
 
         Bind(Nothing)
     End Sub

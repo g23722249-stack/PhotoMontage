@@ -83,7 +83,7 @@ Friend Class CollageCanvas
     Private ReadOnly _menuDeleteText As ToolStripItem
     Private ReadOnly _menuMosaicNext As ToolStripItem
     Private ReadOnly _menuMosaicSelected As ToolStripItem
-    Private ReadOnly _toolTip As New ToolTip()
+    Private ReadOnly _toolTip As New HelpToolTip(Me)
     Private _hoverMosaicCell As Integer = -1
 
     ''' <summary>馬賽克格子的右鍵命令。</summary>
@@ -408,7 +408,7 @@ Friend Class CollageCanvas
         If cell = _hoverMosaicCell Then Return
         _hoverMosaicCell = cell
         Dim asset = If(cell >= 0, _project.FindPhoto(_project.Mosaic.Tiles(cell)), Nothing)
-        _toolTip.SetToolTip(Me, asset?.FileName)
+        _toolTip.ShowFor(Me, asset?.FileName, If(asset Is Nothing, Nothing, "右鍵可換成相近的素材或左側選取的照片。"))
     End Sub
 
     Private Sub DrawEmptyHint(g As Graphics, rect As RectangleF)
@@ -1121,7 +1121,7 @@ Friend Class CollageCanvas
         Dim index = HitTestToolbar(pt)
         If index = _hoverToolbar Then Return
         _hoverToolbar = index
-        _toolTip.SetToolTip(Me, If(index >= 0, FreeCommandText(ToolbarCommands(index)), Nothing))
+        _toolTip.ShowFor(Me, If(index >= 0, FreeCommandText(ToolbarCommands(index)), Nothing), If(index >= 0, FreeCommandHelp(ToolbarCommands(index)), Nothing))
         Invalidate()
     End Sub
 
@@ -1133,6 +1133,17 @@ Friend Class CollageCanvas
             Case FreeCommand.SendToBack : Return "移到最下層"
             Case FreeCommand.Duplicate : Return "複製"
             Case Else : Return "從畫布移除"
+        End Select
+    End Function
+
+    Private Shared Function FreeCommandHelp(command As FreeCommand) As String
+        Select Case command
+            Case FreeCommand.BringToFront : Return "讓選取的照片蓋在所有照片上面。"
+            Case FreeCommand.BringForward : Return "讓選取的照片往上一層。"
+            Case FreeCommand.SendBackward : Return "讓選取的照片往下一層。"
+            Case FreeCommand.SendToBack : Return "讓選取的照片放到所有照片下面。"
+            Case FreeCommand.Duplicate : Return "複製選取的照片，放在旁邊。"
+            Case Else : Return "從畫布移除選取的照片（Delete），照片仍保留在左側清單。"
         End Select
     End Function
 

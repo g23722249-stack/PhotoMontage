@@ -31,23 +31,25 @@ Friend Class FreePanel
     ''' <summary>要求對選取的照片執行圖層命令。</summary>
     Public Event CommandRequested As EventHandler(Of FreeCommandEventArgs)
 
+    Private ReadOnly _help As New HelpToolTip(Me)
+
     Public Sub New()
         _selectionLabel = AddLabel("")
         _selectionLabel.Font = New Font(Font, FontStyle.Bold)
 
-        Editor(AddLabel("外框"))
+        Dim frameLabel = Editor(AddLabel("外框"))
         _frame = Editor(Add(New SegmentedChoice("無", "白邊", "拍立得")))
         AddHandler _frame.SelectedChanged, Sub(s, e) Apply(Nothing, Sub(i) i.Frame = CType(Math.Max(0, _frame.SelectedIndex), Core.FrameStyle))
 
-        Editor(AddLabel("外框寬度"))
+        Dim frameWidthLabel = Editor(AddLabel("外框寬度"))
         _frameWidth = Editor(Add(New LabeledSlider(0, 10, Function(v) $"{v}%")))
         AddHandler _frameWidth.ValueChanged, Sub(s, e) Apply("free:frame-width", Sub(i) i.FrameWidth = _frameWidth.Value / 100.0F)
 
-        Editor(AddLabel("大小（畫布寬度）"))
+        Dim sizeLabel = Editor(AddLabel("大小（畫布寬度）"))
         _size = Editor(Add(New LabeledSlider(4, 100, Function(v) $"{v}%")))
         AddHandler _size.ValueChanged, Sub(s, e) Apply("free:size", Sub(i) i.Width = _size.Value / 100.0F)
 
-        Editor(AddLabel("旋轉"))
+        Dim rotationLabel = Editor(AddLabel("旋轉"))
         _rotation = Editor(Add(New LabeledSlider(-180, 180, Function(v) $"{v}°")))
         AddHandler _rotation.ValueChanged, Sub(s, e) Apply("free:rotation", Sub(i) i.Rotation = _rotation.Value)
 
@@ -69,7 +71,7 @@ Friend Class FreePanel
         whole.Font = New Font(Font, FontStyle.Bold)
         whole.Margin = New Padding(0, 16, 0, 2)
 
-        AddLabel("隨性程度")
+        Dim loosenessLabel = AddLabel("隨性程度")
         _looseness = Add(New LabeledSlider(0, 10, Function(v) If(v = 0, "整齊", If(v <= 3, "低", If(v <= 7, "中", "高")))))
         AddHandler _looseness.ValueChanged, Sub(s, e)
                                                 If _updating OrElse _project Is Nothing Then Return
@@ -89,6 +91,18 @@ Friend Class FreePanel
         tips.ForeColor = SystemColors.GrayText
         tips.MaximumSize = New Size(210, 0)
         tips.Margin = New Padding(0, 12, 0, 2)
+
+        _help.SetHelp(HelpTexts.FreeFrame, frameLabel, _frame)
+        _help.SetHelp(HelpTexts.FreeFrameWidth, frameWidthLabel, _frameWidth)
+        _help.SetHelp(HelpTexts.FreeSize, sizeLabel, _size)
+        _help.SetHelp(HelpTexts.FreeRotation, rotationLabel, _rotation)
+        _help.SetHelp(HelpTexts.FreeShadow, _shadow)
+        _help.SetHelp(HelpTexts.FreeBringToFront, front)
+        _help.SetHelp(HelpTexts.FreeSendToBack, back)
+        _help.SetHelp(HelpTexts.FreeApplyFrameToAll, applyAll)
+        _help.SetHelp(HelpTexts.FreeLooseness, loosenessLabel, _looseness)
+        _help.SetHelp(HelpTexts.FreeScatter, scatter)
+        _help.SetHelp(HelpTexts.FreeTidy, tidy)
 
         SetSelection(New List(Of FreeItem))
     End Sub

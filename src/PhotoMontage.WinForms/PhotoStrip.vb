@@ -23,7 +23,7 @@ Friend Class PhotoStrip
     End Class
 
     Private ReadOnly _items As New List(Of Item)
-    Private ReadOnly _toolTip As New ToolTip()
+    Private ReadOnly _toolTip As New HelpToolTip(Me)
     Private ReadOnly _menu As New ContextMenuStrip()
     Private _nextSequence As Integer
     Private _anchorIndex As Integer = -1
@@ -376,7 +376,7 @@ Friend Class PhotoStrip
         Dim hover = HitTest(e.Location)
         If hover <> _hoverIndex Then
             _hoverIndex = hover
-            _toolTip.SetToolTip(Me, If(hover >= 0, Describe(_items(hover).Asset), Nothing))
+            _toolTip.ShowFor(Me, If(hover >= 0, _items(hover).Asset.FileName, Nothing), If(hover >= 0, Describe(_items(hover).Asset), Nothing))
         End If
     End Sub
 
@@ -467,15 +467,13 @@ Friend Class PhotoStrip
     Private Shared Function Describe(asset As PhotoAsset) As String
         Select Case asset.Status
             Case PhotoStatus.Failed
-                Return $"{asset.FileName}{Environment.NewLine}{ImportFailure.Describe(asset.FailureReason.GetValueOrDefault())}"
+                Return ImportFailure.Describe(asset.FailureReason.GetValueOrDefault())
             Case PhotoStatus.Pending
-                Return $"{asset.FileName}{Environment.NewLine}讀取中…"
+                Return "讀取中…"
             Case Else
-                Dim lines As New List(Of String) From {
-                    asset.FileName,
-                    $"{asset.PixelSize.Width} × {asset.PixelSize.Height}"
-                }
+                Dim lines As New List(Of String) From {$"{asset.PixelSize.Width} × {asset.PixelSize.Height}"}
                 If asset.DateTaken.HasValue Then lines.Add($"拍攝：{asset.DateTaken.Value:yyyy/MM/dd HH:mm}")
+                lines.Add("拖曳到畫布或雙擊可加入作品，右鍵可排序或移除。")
                 Return String.Join(Environment.NewLine, lines)
         End Select
     End Function

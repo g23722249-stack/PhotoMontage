@@ -295,6 +295,14 @@ End Class
 - 左側即時預覽紙上的樣子，虛線標出印表機印不到的範圍；顯示紙上實際公分大小與裁切提示。
 - 列印時在背景以印表機解析度（上限 300 dpi、長邊上限 6000 像素）重新繪製作品，可取消；版面計算在 `Core/Export/PrintPlanner.vb`（有單元測試），繪製與匯出共用 `MontageExporter.RenderBitmap`。
 
+## 8.13 說明提示（ToolTip）
+
+- 風格比照 iPhoto（Aqua.Net `MediaItem` 的 ToolTipTitle／ToolTipText）：粗體標題為功能名稱（有快速鍵時附上），內容為用途與操作說明，滑鼠停留 0.5 秒出現、最長顯示 20 秒。
+- `HelpToolTip`：`SetHelp(說明, 控制項…)` 一併套用到子控制項與欄位標籤；自繪控制項（縮圖清單、畫布）用 `ShowFor` 依滑鼠位置換內容。
+- 所有文字集中在 `HelpTexts.vb`，修改用語只需改這一個檔案。
+- 涵蓋：工具列、左側加入照片、版面／樣式／文字／馬賽克／自由拼貼各分頁、匯出與列印對話框、縮圖（檔名＋尺寸＋拍攝時間＋操作提示）、畫布浮動工具列、馬賽克格子。
+- 限制：WinForms 不會對停用中的控制項顯示提示（例如尚未選取照片時的自由拼貼設定）。
+
 ## 9. 已確認的宿主資訊（iPhoto.Net）
 - SDK 樣式 vbproj，`net8.0-windows`，WinForms，`PlatformTarget=x86`（Jet 4.0），`Option Strict Off`，自訂 `Sub Main`。
 - 已用模擬相同設定的宿主專案實測：可 `ProjectReference` 本專案並呼叫 `MontageEditor.ShowDialog`、`MontageEditorControl`，建置無警告。

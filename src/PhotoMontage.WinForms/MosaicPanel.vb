@@ -38,6 +38,8 @@ Friend Class MosaicPanel
     ''' <summary>使用者選了「依主圖比例」以外的比例，或重新選了「依主圖比例」。</summary>
     Public Event RatioRequested As EventHandler
 
+    Private ReadOnly _help As New HelpToolTip(Me)
+
     Public Sub New()
         AddLabel("主圖")
         _targetLabel = Add(New System.Windows.Forms.Label() With {.AutoEllipsis = True, .Height = 20, .BackColor = Color.Transparent})
@@ -48,7 +50,7 @@ Friend Class MosaicPanel
         Add(_useSelected)
         Add(pick)
 
-        AddLabel("畫布比例")
+        Dim ratioLabel = AddLabel("畫布比例")
         _ratio = Add(New Aqua.DropDownList())
         _ratio.AddItem("target", "依主圖比例")
         For Each p In CanvasPresets.All
@@ -59,7 +61,7 @@ Friend Class MosaicPanel
         _updating = False
         AddHandler _ratio.SelectedChanged, Sub(s, e) If Not _updating Then RaiseEvent RatioRequested(Me, EventArgs.Empty)
 
-        AddLabel("每列格數")
+        Dim columnsLabel = AddLabel("每列格數")
         _columns = Add(New LabeledSlider(MosaicSettings.MinColumns, MosaicSettings.MaxColumns, Function(v) v.ToString()))
         AddHandler _columns.ValueChanged, Sub(s, e) Apply("mosaic:columns", True,
             Sub(m)
@@ -68,7 +70,7 @@ Friend Class MosaicPanel
             End Sub)
         _gridLabel = Add(New System.Windows.Forms.Label() With {.Height = 20, .ForeColor = SystemColors.GrayText, .BackColor = Color.Transparent})
 
-        AddLabel("每張素材最多使用（0 = 不限）")
+        Dim repeatLabel = AddLabel("每張素材最多使用（0 = 不限）")
         _maxRepeat = Add(New LabeledSlider(0, 50, Function(v) If(v = 0, "不限", $"{v} 次")))
         AddHandler _maxRepeat.ValueChanged, Sub(s, e) Apply("mosaic:repeat", True, Sub(m) m.MaxRepeat = _maxRepeat.Value)
 
@@ -76,7 +78,7 @@ Friend Class MosaicPanel
         _avoidAdjacent.Margin = New Padding(0, 6, 0, 2)
         AddHandler _avoidAdjacent.CheckedChanged, Sub(s, e) Apply(Nothing, True, Sub(m) m.AvoidAdjacentDuplicates = _avoidAdjacent.Checked)
 
-        AddLabel("疊上主圖")
+        Dim tintLabel = AddLabel("疊上主圖")
         _tint = Add(New LabeledSlider(0, 30, Function(v) $"{v}%"))
         AddHandler _tint.ValueChanged, Sub(s, e) Apply("mosaic:tint", False, Sub(m) m.Tint = _tint.Value / 100.0F)
         Dim tintHint = AddLabel("適度疊色（約 10～20%）能讓遠看時更容易認出主圖。")
@@ -92,6 +94,16 @@ Friend Class MosaicPanel
         AddRow(_cancel)
         _status = AddLabel("")
         _status.MaximumSize = New Size(210, 0)
+
+        _help.SetHelp(HelpTexts.MosaicUseSelected, _useSelected)
+        _help.SetHelp(HelpTexts.MosaicPickTarget, pick)
+        _help.SetHelp(HelpTexts.MosaicRatio, ratioLabel, _ratio)
+        _help.SetHelp(HelpTexts.MosaicColumns, columnsLabel, _columns)
+        _help.SetHelp(HelpTexts.MosaicMaxRepeat, repeatLabel, _maxRepeat)
+        _help.SetHelp(HelpTexts.MosaicAvoidAdjacent, _avoidAdjacent)
+        _help.SetHelp(HelpTexts.MosaicTint, tintLabel, _tint)
+        _help.SetHelp(HelpTexts.MosaicGenerate, _generate)
+        _help.SetHelp(HelpTexts.MosaicCancel, _cancel)
     End Sub
 
     Public Sub Bind(project As MontageProject)

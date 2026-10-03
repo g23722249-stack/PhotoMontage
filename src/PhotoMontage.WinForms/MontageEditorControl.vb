@@ -69,7 +69,7 @@ Public Class MontageEditorControl
     Private ReadOnly _modeButtons As SegmentedChoice
     Private ReadOnly _undoButton As PillButton
     Private ReadOnly _redoButton As PillButton
-    Private ReadOnly _toolTip As New ToolTip()
+    Private ReadOnly _help As New HelpToolTip(Me)
     Private ReadOnly _progressPanel As Panel
     Private ReadOnly _progressBar As Aqua.ProgressBar
     Private ReadOnly _progressLabel As Label
@@ -152,7 +152,6 @@ Public Class MontageEditorControl
         _exportButton = New PillButton() With {.Text = "匯出…", .Dock = DockStyle.Bottom, .Enabled = False}
         AddHandler _exportButton.Click, Sub(s, e) ShowExportDialog()
         _printButton = New PillButton() With {.Text = "列印…", .Dock = DockStyle.Right, .Width = 100, .Enabled = False}
-        _toolTip.SetToolTip(_printButton, "列印（Ctrl+P）")
         AddHandler _printButton.Click, Sub(s, e) ShowPrintDialog()
 
         ' 「版面」頁
@@ -226,10 +225,8 @@ Public Class MontageEditorControl
 
         ' 工具列
         _undoButton = New PillButton() With {.Text = "復原", .Width = 76, .Enabled = False}
-        _toolTip.SetToolTip(_undoButton, "復原（Ctrl+Z）")
         AddHandler _undoButton.Click, Sub(s, e) Undo()
         _redoButton = New PillButton() With {.Text = "重做", .Width = 76, .Enabled = False}
-        _toolTip.SetToolTip(_redoButton, "重做（Ctrl+Y）")
         AddHandler _redoButton.Click, Sub(s, e) Redo()
         Dim addTextButton As New PillButton() With {.Text = "新增文字", .Width = 100}
         AddHandler addTextButton.Click, Sub(s, e) AddText()
@@ -245,6 +242,19 @@ Public Class MontageEditorControl
             toolbar.Controls.Add(b)
         Next
         AddHandler _history.Changed, Sub(s, e) UpdateUndoButtons()
+
+        _help.SetHelp(HelpTexts.Mode, modeLabel, _modeButtons)
+        _help.SetHelp(HelpTexts.Undo, _undoButton)
+        _help.SetHelp(HelpTexts.Redo, _redoButton)
+        _help.SetHelp(HelpTexts.AddText, addTextButton)
+        _help.SetHelp(HelpTexts.AddPhotos, addPhotosButton)
+        _help.SetHelp(HelpTexts.AddFolder, addFolderButton)
+        _help.SetHelp(HelpTexts.CancelImport, cancel)
+        _help.SetHelp(HelpTexts.CanvasRatio, ratioLabel, _ratioCombo)
+        _help.SetHelp(HelpTexts.Templates, templateLabel, _templateList)
+        _help.SetHelp(HelpTexts.AutoAssign, autoAssign)
+        _help.SetHelp(HelpTexts.Export, _exportButton)
+        _help.SetHelp(HelpTexts.Print, _printButton)
 
         Controls.Add(_canvas)
         Controls.Add(right)
@@ -1254,7 +1264,6 @@ Public Class MontageEditorControl
             _importCts.Cancel()
             _importCts.Dispose()
             _layoutTimer.Dispose()
-            _toolTip.Dispose()
             For Each bmp In _previewImages.Values
                 bmp.Dispose()
             Next

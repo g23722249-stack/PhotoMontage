@@ -26,6 +26,8 @@ Friend Class StylePanel
     ''' <summary>使用者選了背景圖檔案（由編輯器檢查後套用）。</summary>
     Public Event BackgroundImageRequested As EventHandler(Of FilesDroppedEventArgs)
 
+    Private ReadOnly _help As New HelpToolTip(Me)
+
     Public Sub New()
         _collageOnly.Add(AddLabel("間距"))
         _gap = Add(New LabeledSlider(0, 16, Function(v) $"{v * 0.5:0.#}%"))
@@ -37,17 +39,23 @@ Friend Class StylePanel
         _collageOnly.Add(_radius)
         AddHandler _radius.ValueChanged, Sub(s, e) Apply("style:radius", Sub(p) p.Collage.CornerRadius = _radius.Value / 100.0F)
 
-        AddLabel("背景色")
+        Dim backgroundLabel = AddLabel("背景色")
         _background = Add(New ColorButton())
         AddHandler _background.ColorPicked, Sub(s, e) Apply(Nothing, Sub(p) p.BackgroundColor = _background.SelectedColor)
 
-        AddLabel("背景圖")
+        Dim backgroundImageLabel = AddLabel("背景圖")
         _bgImageLabel = Add(New System.Windows.Forms.Label() With {.AutoEllipsis = True, .Height = 20, .ForeColor = SystemColors.GrayText, .BackColor = Color.Transparent})
         Dim pick As New PillButton() With {.Text = "選擇圖片…", .Width = 116}
         AddHandler pick.Click, AddressOf OnPickBackgroundImage
         _clearBgImage = New PillButton() With {.Text = "移除", .Width = 76}
         AddHandler _clearBgImage.Click, Sub(s, e) Apply(Nothing, Sub(p) p.BackgroundImagePath = Nothing)
         AddRow(pick, _clearBgImage)
+
+        _help.SetHelp(HelpTexts.Gap, _collageOnly(0), _gap)
+        _help.SetHelp(HelpTexts.Radius, _collageOnly(2), _radius)
+        _help.SetHelp(HelpTexts.BackgroundColor, backgroundLabel, _background)
+        _help.SetHelp(HelpTexts.BackgroundImage, backgroundImageLabel, pick)
+        _help.SetHelp(HelpTexts.ClearBackgroundImage, _clearBgImage)
 
         Dim hint = AddLabel("背景圖會鋪滿整張畫布，從格子間距與空格中露出。")
         hint.ForeColor = SystemColors.GrayText

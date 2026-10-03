@@ -113,6 +113,15 @@ Friend Class ExportDialog
         UpdateSize()
         OnFormatChanged()
 
+        Dim help As New HelpToolTip(Me)
+        help.SetHelp(HelpTexts.ExportPreset, _preset)
+        help.SetHelp(HelpTexts.ExportCustomEdge, _customEdge)
+        help.SetHelp(HelpTexts.ExportFormat, _format)
+        help.SetHelp(HelpTexts.ExportQuality, _quality)
+        help.SetHelp(HelpTexts.ExportPath, _path)
+        help.SetHelp(HelpTexts.ExportBrowse, _browse)
+        help.SetHelp(HelpTexts.ExportStart, _exportButton)
+
         AquaTheme.Apply(Me, accent)
     End Sub
 
