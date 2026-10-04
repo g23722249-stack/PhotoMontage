@@ -66,6 +66,7 @@ Private Sub mnuMontage_Click(sender As Object, e As EventArgs) Handles mnuMontag
         .DefaultExportFolder = CurrentAlbumFolder,   ' 匯出對話框預設的資料夾
         .CloseAfterExport = True,                    ' 匯出後自動關閉並回傳結果
         .ShowExportCompletedMessage = False,         ' 由 iPhoto 自己處理後續
+        .StartMaximized = True,                      ' 開啟時最大化（預設）
         .AquaColor = Aqua.ColorConstants.Blue        ' 與 iPhoto 使用的 Aqua 主題色一致
     })
 

@@ -24,6 +24,7 @@ Friend Class MontageEditorForm
         MinimumSize = New Size(800, 600)
         Size = New Size(1200, 800)
         KeyPreview = True
+        If options.StartMaximized Then WindowState = FormWindowState.Maximized
 
         _initialPhotos = options.InitialPhotos
         _closeAfterExport = options.CloseAfterExport
@@ -35,8 +36,26 @@ Friend Class MontageEditorForm
 
     ''' <summary>內容放在 Aqua 標題列下方，並留出右下角的調整大小把手。在自動縮放之後設定，確保是實際像素。</summary>
     Protected Overrides Sub OnLoad(e As EventArgs)
+        UpdateMaximizedBounds()
         MyBase.OnLoad(e)
         Padding = New Padding(1, AquaTitleBarHeight, 1, AquaResizeGripSize)
+    End Sub
+
+    ''' <summary>移到別的螢幕時，最大化範圍跟著換成該螢幕。</summary>
+    Protected Overrides Sub OnLocationChanged(e As EventArgs)
+        MyBase.OnLocationChanged(e)
+        If WindowState = FormWindowState.Normal Then UpdateMaximizedBounds()
+    End Sub
+
+    ''' <summary>
+    ''' Aqua 視窗沒有系統邊框，最大化時預設會蓋住工作列；限制在目前螢幕的工作區域內。
+    ''' 最大化範圍以該螢幕的左上角為原點。
+    ''' </summary>
+    Private Sub UpdateMaximizedBounds()
+        Dim screen = If(IsHandleCreated, System.Windows.Forms.Screen.FromHandle(Handle),
+                        System.Windows.Forms.Screen.FromPoint(Cursor.Position))
+        Dim work = screen.WorkingArea
+        MaximizedBounds = New Rectangle(work.X - screen.Bounds.X, work.Y - screen.Bounds.Y, work.Width, work.Height)
     End Sub
 
     ''' <summary>視窗顯示後才開始匯入，宿主一次傳入大量照片時編輯器也能立即開啟。</summary>

@@ -22,6 +22,9 @@ Public Class MontageOptions
     ''' <summary>匯出成功後顯示完成訊息，並可開啟檔案所在資料夾。</summary>
     Public Property ShowExportCompletedMessage As Boolean = True
 
+    ''' <summary>編輯器視窗開啟時最大化（還原後為 1200 × 800）。</summary>
+    Public Property StartMaximized As Boolean = True
+
     ''' <summary>Aqua 控制項的主題色；宿主可傳入自己的設定讓外觀一致。</summary>
     Public Property AquaColor As Aqua.ColorConstants = Aqua.ColorConstants.Blue
 End Class
