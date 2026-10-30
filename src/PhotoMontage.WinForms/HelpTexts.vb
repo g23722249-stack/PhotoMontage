@@ -1,4 +1,4 @@
-''' <summary>
+﻿''' <summary>
 ''' 所有說明提示的文字（集中在此，方便統一修改用語）。
 ''' 標題是功能名稱（有快速鍵時附上），內容說明用途與操作方式，每行保持簡短。
 ''' </summary>
@@ -31,6 +31,31 @@ Friend NotInheritable Class HelpTexts
 
     Public Shared ReadOnly AddFolder As New HelpTip("加入資料夾",
         "加入資料夾（含子資料夾）中所有的照片。")
+
+    Public Shared ReadOnly PickPhotos As New HelpTip("選取照片",
+        "開啟和相簿一樣的畫面：勾選相簿整本加入，",
+        "或點相簿在右邊逐張勾選，可以跨相簿累積。")
+
+    Public Shared ReadOnly AddFiles As New HelpTip("加入檔案",
+        "從檔案總管選擇一張或多張照片加入。")
+
+    Public Shared ReadOnly PickerTree As New HelpTip("相簿",
+        "勾選框：整本加入（再按一次取消），可以勾多本。",
+        "點名稱：右邊列出照片，可以逐張勾選。",
+        "空白鍵也可以勾選。")
+
+    Public Shared ReadOnly PickerAll As New HelpTip("全選",
+        "勾選右邊列出的所有照片。")
+
+    Public Shared ReadOnly PickerNone As New HelpTip("全不選",
+        "取消右邊列出的所有照片。")
+
+    Public Shared ReadOnly PickerAdd As New HelpTip("加入",
+        "把勾選的照片加入作品；已經加入的會略過。")
+
+    Public Shared ReadOnly ExportPickFolder As New HelpTip("選相簿",
+        "從相簿中選擇作品存放的位置，",
+        "匯出後作品會出現在那本相簿。")
 
     Public Shared ReadOnly CancelImport As New HelpTip("取消讀取",
         "停止讀取剩下的照片。")

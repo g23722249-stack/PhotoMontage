@@ -12,6 +12,8 @@ Friend Class MontageEditorForm
     Private ReadOnly _editor As MontageEditorControl
     Private ReadOnly _initialPhotos As IList(Of String)
     Private ReadOnly _closeAfterExport As Boolean
+    Private ReadOnly _photoSource As IPhotoSource
+    Private ReadOnly _startMaximized As Boolean
 
     Public Property Result As MontageResult = MontageResult.Cancelled
 
@@ -24,21 +26,27 @@ Friend Class MontageEditorForm
         MinimumSize = New Size(800, 600)
         Size = New Size(1200, 800)
         KeyPreview = True
-        If options.StartMaximized Then WindowState = FormWindowState.Maximized
+        _startMaximized = options.StartMaximized
 
         _initialPhotos = options.InitialPhotos
         _closeAfterExport = options.CloseAfterExport
+        _photoSource = options.PhotoSource
         _editor = New MontageEditorControl() With {.Dock = DockStyle.Fill}
         _editor.Initialize(options)
         AddHandler _editor.Exported, AddressOf OnExported
         Controls.Add(_editor)
     End Sub
 
-    ''' <summary>內容放在 Aqua 標題列下方，並留出右下角的調整大小把手。在自動縮放之後設定，確保是實際像素。</summary>
+    ''' <summary>
+    ''' 內容放在 Aqua 標題列下方，並留出右下角的調整大小把手。在自動縮放之後設定，確保是實際像素。
+    ''' 最大化在這裡才做：視窗已建立、最大化範圍（工作區域）已設定。在建構時就設 WindowState，
+    ''' 視窗會以整個螢幕大小、偏離左上角的位置建立（宿主的對話框尤其明顯），範圍限制不會生效。
+    ''' </summary>
     Protected Overrides Sub OnLoad(e As EventArgs)
         UpdateMaximizedBounds()
         MyBase.OnLoad(e)
         Padding = New Padding(1, AquaTitleBarHeight, 1, AquaResizeGripSize)
+        If _startMaximized Then WindowState = FormWindowState.Maximized
     End Sub
 
     ''' <summary>移到別的螢幕時，最大化範圍跟著換成該螢幕。</summary>
@@ -61,7 +69,12 @@ Friend Class MontageEditorForm
     ''' <summary>視窗顯示後才開始匯入，宿主一次傳入大量照片時編輯器也能立即開啟。</summary>
     Protected Overrides Sub OnShown(e As EventArgs)
         MyBase.OnShown(e)
-        _editor.AddPhotos(_initialPhotos)
+        If (_initialPhotos Is Nothing OrElse _initialPhotos.Count = 0) AndAlso _photoSource IsNot Nothing Then
+            ' 沒有預先載入照片：直接選取（視窗先畫出來）
+            BeginInvoke(New Action(Sub() _editor.ShowPhotoPicker()))
+        Else
+            _editor.AddPhotos(_initialPhotos)
+        End If
     End Sub
 
     Private Sub OnExported(sender As Object, e As MontageExportedEventArgs)

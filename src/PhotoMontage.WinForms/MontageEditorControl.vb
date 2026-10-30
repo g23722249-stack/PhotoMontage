@@ -78,6 +78,8 @@ Public Class MontageEditorControl
     Private ReadOnly _progressBar As Aqua.ProgressBar
     Private ReadOnly _progressLabel As Label
     Private ReadOnly _failureLink As LinkLabel
+    Private ReadOnly _addPhotosButton As PillButton
+    Private ReadOnly _addFolderButton As PillButton
 
     ''' <summary>作品匯出成功後觸發。</summary>
     Public Event Exported As EventHandler(Of MontageExportedEventArgs)
@@ -96,6 +98,8 @@ Public Class MontageEditorControl
         AddHandler addPhotosButton.Click, AddressOf OnAddPhotosClick
         Dim addFolderButton As New PillButton() With {.Text = "加入資料夾…", .Dock = DockStyle.Top}
         AddHandler addFolderButton.Click, AddressOf OnAddFolderClick
+        _addPhotosButton = addPhotosButton
+        _addFolderButton = addFolderButton
 
         _progressBar = New Aqua.ProgressBar() With {.Dock = DockStyle.Top}
         _progressLabel = New Label() With {.Dock = DockStyle.Fill, .TextAlign = ContentAlignment.MiddleLeft}
@@ -292,6 +296,13 @@ Public Class MontageEditorControl
     Friend Sub Initialize(options As MontageOptions)
         _options = options
         _project.Mode = options.Mode
+        If options.PhotoSource IsNot Nothing Then
+            ' 選取照片：和相簿一樣的畫面；另一個按鈕從檔案總管加入
+            _addPhotosButton.Text = "選取照片…"
+            _addFolderButton.Text = "加入檔案…"
+            _help.SetHelp(HelpTexts.PickPhotos, _addPhotosButton)
+            _help.SetHelp(HelpTexts.AddFiles, _addFolderButton)
+        End If
 
         SyncLayoutPickers()
         _stylePanel.Bind(_project)
@@ -436,16 +447,39 @@ Public Class MontageEditorControl
         End If
     End Sub
 
-    Private Sub OnAddPhotosClick(sender As Object, e As EventArgs)
+    ''' <summary>
+    ''' 開啟「選取照片」畫面（<see cref="MontageOptions.PhotoSource"/>），把勾選的照片加入。
+    ''' 沒有設定來源時開啟檔案對話框。有加入照片時回傳 True。
+    ''' </summary>
+    Public Function ShowPhotoPicker() As Boolean
+        If _options.PhotoSource Is Nothing Then Return ShowAddFilesDialog()
+        Using dlg As New PhotoPickerDialog(_options.PhotoSource, _options.AquaColor, _importer.Limits.MaxPhotosFor(_project.Mode))
+            If dlg.ShowDialog(Me) <> DialogResult.OK OrElse dlg.SelectedPhotos.Count = 0 Then Return False
+            AddPhotos(dlg.SelectedPhotos)
+            Return True
+        End Using
+    End Function
+
+    Private Function ShowAddFilesDialog() As Boolean
         Using dlg As New OpenFileDialog()
             dlg.Title = "選擇照片"
             dlg.Multiselect = True
             dlg.Filter = ImageFormatSniffer.DialogFilter
-            If dlg.ShowDialog(Me) = DialogResult.OK Then AddPhotos(dlg.FileNames)
+            If dlg.ShowDialog(Me) <> DialogResult.OK Then Return False
+            AddPhotos(dlg.FileNames)
+            Return True
         End Using
+    End Function
+
+    Private Sub OnAddPhotosClick(sender As Object, e As EventArgs)
+        ShowPhotoPicker()   ' 沒有來源時是檔案對話框
     End Sub
 
     Private Sub OnAddFolderClick(sender As Object, e As EventArgs)
+        If _options.PhotoSource IsNot Nothing Then
+            ShowAddFilesDialog()
+            Return
+        End If
         Using dlg As New FolderBrowserDialog()
             dlg.Description = "選擇照片資料夾（含子資料夾）"
             dlg.UseDescriptionForTitle = True
@@ -1137,7 +1171,8 @@ Public Class MontageEditorControl
                                                MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Return Nothing
 
         Dim result As ExportResult
-        Using dlg As New ExportDialog(_project, New MontageExporter(_importer), _options.DefaultExportFolder, _options.AquaColor)
+        Using dlg As New ExportDialog(_project, New MontageExporter(_importer), _options.DefaultExportFolder, _options.AquaColor,
+                                      If(String.IsNullOrWhiteSpace(_options.ExportFolderPickerText), Nothing, _options.PhotoSource), _options.ExportFolderPickerText)
             If dlg.ShowDialog(Me) <> DialogResult.OK OrElse dlg.Result Is Nothing Then Return Nothing
             result = dlg.Result
         End Using

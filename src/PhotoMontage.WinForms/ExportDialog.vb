@@ -30,6 +30,9 @@ Friend Class ExportDialog
     Private ReadOnly _quality As LabeledSlider
     Private ReadOnly _path As Aqua.TextBox
     Private ReadOnly _browse As PillButton
+    Private ReadOnly _pickFolder As PillButton
+    Private ReadOnly _folderSource As IPhotoSource
+    Private ReadOnly _accent As Aqua.ColorConstants
     Private ReadOnly _progress As Aqua.ProgressBar
     Private ReadOnly _status As System.Windows.Forms.Label
     Private ReadOnly _exportButton As PillButton
@@ -38,10 +41,14 @@ Friend Class ExportDialog
     ''' <summary>匯出成功後的結果；未匯出時為 Nothing。</summary>
     Public Property Result As ExportResult
 
+    ''' <param name="folderSource">有設定時多一個按鈕（<paramref name="folderPickerText"/>），從它選擇存放的資料夾（例如 iPhoto 的相簿）。</param>
     Public Sub New(project As MontageProject, exporter As MontageExporter, defaultFolder As String,
-                   Optional accent As Aqua.ColorConstants = Aqua.ColorConstants.Blue)
+                   Optional accent As Aqua.ColorConstants = Aqua.ColorConstants.Blue,
+                   Optional folderSource As IPhotoSource = Nothing, Optional folderPickerText As String = Nothing)
         _project = project
         _exporter = exporter
+        _folderSource = folderSource
+        _accent = accent
 
         Text = "匯出作品"
         TitleFont = New Font("Microsoft JhengHei UI", 10.0F, FontStyle.Bold)
@@ -84,6 +91,13 @@ Friend Class ExportDialog
         pathRow.Controls.Add(_path)
         pathRow.Controls.Add(New System.Windows.Forms.Panel() With {.Dock = DockStyle.Right, .Width = 6, .BackColor = Color.Transparent})
         pathRow.Controls.Add(_browse)
+        If folderSource IsNot Nothing Then
+            _pickFolder = New PillButton() With {.Text = folderPickerText, .Width = 90, .Dock = DockStyle.Right}
+            AddHandler _pickFolder.Click, AddressOf OnPickFolder
+            pathRow.Controls.Add(New System.Windows.Forms.Panel() With {.Dock = DockStyle.Right, .Width = 6, .BackColor = Color.Transparent})
+            pathRow.Controls.Add(_pickFolder)
+            ClientSize = New Size(ClientSize.Width + 96, ClientSize.Height)   ' 路徑欄留給檔名的寬度不變
+        End If
         AddRow(layout, "儲存位置", pathRow)
 
         _progress = New Aqua.ProgressBar() With {.Dock = DockStyle.Fill, .Visible = False}
@@ -120,6 +134,7 @@ Friend Class ExportDialog
         help.SetHelp(HelpTexts.ExportQuality, _quality)
         help.SetHelp(HelpTexts.ExportPath, _path)
         help.SetHelp(HelpTexts.ExportBrowse, _browse)
+        If _pickFolder IsNot Nothing Then help.SetHelp(HelpTexts.ExportPickFolder, _pickFolder)
         help.SetHelp(HelpTexts.ExportStart, _exportButton)
 
         AquaTheme.Apply(Me, accent)
@@ -207,6 +222,16 @@ Friend Class ExportDialog
         End Using
     End Sub
 
+    ''' <summary>從來源（相簿）選擇存放的資料夾，檔名不變。</summary>
+    Private Sub OnPickFolder(sender As Object, e As EventArgs)
+        Using dlg As New PhotoPickerDialog(_folderSource, _accent, pickFolder:=True)
+            If dlg.ShowDialog(Me) <> DialogResult.OK OrElse String.IsNullOrEmpty(dlg.SelectedFolder) Then Return
+            Dim name = Path.GetFileName(If(_path.Text, "").Trim())
+            If String.IsNullOrEmpty(name) Then name = ExportPlanner.DefaultFileName(SelectedFormat, Date.Now)
+            _path.Text = Path.Combine(dlg.SelectedFolder, name)
+        End Using
+    End Sub
+
     Private Async Sub OnExportClick(sender As Object, e As EventArgs)
         If _cts IsNot Nothing Then Return
         Dim settings = BuildSettings()
@@ -279,6 +304,7 @@ Friend Class ExportDialog
         For Each c In New Control() {_preset, _format, _path, _browse}
             c.Enabled = Not running
         Next
+        If _pickFolder IsNot Nothing Then _pickFolder.Enabled = Not running
         _customEdge.Enabled = Not running AndAlso SelectedPreset.IsCustom
         _quality.Enabled = Not running AndAlso SelectedFormat = ExportFormat.Jpeg
         _progress.Visible = running

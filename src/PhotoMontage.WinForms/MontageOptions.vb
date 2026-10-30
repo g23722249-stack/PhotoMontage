@@ -25,6 +25,19 @@ Public Class MontageOptions
     ''' <summary>編輯器視窗開啟時最大化（還原後為 1200 × 800）。</summary>
     Public Property StartMaximized As Boolean = True
 
+    ''' <summary>
+    ''' 「選取照片」畫面的資料來源（宿主的相簿，或 <see cref="FolderPhotoSource"/>）。有設定時「選取照片…」
+    ''' 開啟和相簿一樣的畫面，「加入檔案…」用檔案對話框；沒有設定時是「加入照片…」與「加入資料夾…」。
+    ''' 沒有預先載入照片時，編輯器開啟後會直接顯示這個畫面。
+    ''' </summary>
+    Public Property PhotoSource As IPhotoSource
+
+    ''' <summary>
+    ''' 匯出時可以從 <see cref="PhotoSource"/> 選擇存放位置（有 <see cref="PhotoSourceNode.Folder"/> 的節點）；
+    ''' 這是那個按鈕的文字（例如「選相簿…」）。空白則沒有這個按鈕。
+    ''' </summary>
+    Public Property ExportFolderPickerText As String
+
     ''' <summary>Aqua 控制項的主題色；宿主可傳入自己的設定讓外觀一致。</summary>
     Public Property AquaColor As Aqua.ColorConstants = Aqua.ColorConstants.Blue
 End Class
